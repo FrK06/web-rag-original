@@ -112,11 +112,3 @@ web_rag/
    ```
 
 3. Navigate to `http://localhost:3000` in your browser to use the application
-
-## License
-
-[MIT](LICENSE)
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
