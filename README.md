@@ -1,6 +1,6 @@
 # Web RAG System
 
-A multimodal Retrieval-Augmented Generation (RAG) system with web search, image processing, speech, and communication capabilities.
+A multimodal (Agentic) Retrieval-Augmented Generation (RAG) system with web search, scrape, image processing, speech (TTS & STT), and communication capabilities (currently outgoing phone calls and SMS).
 
 ## Features
 
