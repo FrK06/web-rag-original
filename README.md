@@ -55,7 +55,7 @@ web_rag/
 
 1. Clone the repository
    ```bash
-   git clone https://github.com/yourusername/web-rag.git
+   git clone https://github.com/FrK06/web-rag.git
    cd web-rag
    ```
 
