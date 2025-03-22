@@ -40,20 +40,62 @@ The application connects to a Python FastAPI backend that powers the RAG capabil
 The project follows a modular architecture for maintainability:
 
 ```
-src/
-├── components/
-│   └── chat/              # Modularized chat components
-│       ├── components/    # UI components
-│       ├── services/      # API interaction services
-│       ├── utils/         # Helper utilities
-│       ├── ChatInterface.tsx  # Main container component
-│       ├── types.ts       # TypeScript type definitions
-│       └── index.ts       # Export file
-├── pages/                 # Next.js pages
-│   ├── api/               # API routes
-│   └── index.tsx          # Main page
-├── styles/                # Global styles
-└── public/                # Static assets
+rag-frontend/
+├── public/               # Static assets
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── vercel.svg
+│   └── window.svg
+├── src/
+│   ├── components/
+│   │   ├── ui/
+│   │   │   └── alert.tsx
+│   │   └── chat/
+│   │       ├── components/                       # UI components
+│   │       │   ├── ChatHeader.tsx                # App header with mode selector
+│   │       │   ├── ChatInput.tsx                 # Input area with attachments
+│   │       │   ├── ImageModal.tsx                # Image viewer modal
+│   │       │   ├── MessageItem.tsx               # Individual message component
+│   │       │   ├── MessagesContainer.tsx         # Message list container
+│   │       │   ├── SpeechRecognitionButton.tsx   # Voice input
+│   │       │   ├── ToolBar.tsx                   # Tool indicators
+│   │       │   ├── ToolButton.tsx                # Individual tool button
+│   │       │   └── WelcomeScreen.tsx             # Initial welcome screen
+│   │       │
+│   │       ├── services/                         # API interaction services
+│   │       │   └── apiService.ts                 # API interactions
+│   │       │ 
+│   │       ├── utils/                            # Helper utilities
+│   │       │   ├── markdownFormatter.ts          # Markdown formatting
+│   │       │   ├── messageStyles.ts              # Styling for message types
+│   │       │   └── toolDetection.ts              # Tool usage detection
+│   │       │ 
+│   │       ├── ChatInterface.tsx                 # Main container component
+│   │       ├── index.ts                          # TypeScript type definitions
+│   │       └── types.ts                          # Export file
+│   │       
+│   ├── pages/                                    # Next.js pages
+│   │   ├── api/                                  # API routes
+│   │   │   └── chat.ts
+│   │   ├── _app.tsx
+│   │   ├── _document.tsx
+│   │   └── index.tsx                             # Main page
+│   │       
+│   ├── styles/
+│   │   └── globals.css
+│   └── react-syntax-highlighter.d.ts
+│ 
+├── .gitignore
+├── eslint.config.mjs
+├── next.config.ts
+├── package.json
+├── package-lock.json
+├── postcss.config.mjs
+├── README.md
+├── tailwind.config.ts
+└── tsconfig.json
+
 ```
 
 ## Getting Started
