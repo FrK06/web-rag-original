@@ -9,6 +9,7 @@ import {
   analyzeImage,
   processImage
 } from './services/apiService';
+import { useTheme } from '@/components/ThemeProvider';
 
 // Components
 import ChatHeader from './components/ChatHeader';
@@ -18,6 +19,10 @@ import ChatInput from './components/ChatInput';
 import ImageModal from './components/ImageModal';
 
 const ChatInterface: React.FC = () => {
+  // Theme state
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+
   // State
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -435,7 +440,7 @@ const ChatInterface: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 to-gray-100">
+    <div className={`flex flex-col h-screen ${isDark ? 'bg-[#0a0a14]' : 'bg-gray-300'}`}>
       {/* Header */}
       <ChatHeader 
         mode={mode}
@@ -463,7 +468,9 @@ const ChatInterface: React.FC = () => {
       />
 
       {/* Tool Bar */}
-      <div className="border-t bg-white py-3 px-6">
+      <div className={`py-3 px-6 ${
+        isDark ? 'bg-toolbar-bg backdrop-blur-sm' : 'bg-gray-200'
+      }`}>
         <div className="max-w-5xl mx-auto">
           <ToolBar 
             activeTools={activeTools}

@@ -1,6 +1,8 @@
 // src/components/chat/components/ChatHeader.tsx
 import React from 'react';
-import { Zap, Trash2 } from 'lucide-react';
+import { Zap, Trash2, Moon, Sun } from 'lucide-react';
+import { useTheme } from '@/components/ThemeProvider';
+import ModeDropdown from './ModeDropdown';
 
 interface ChatHeaderProps {
   mode: string;
@@ -13,33 +15,56 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   onModeChange,
   onClearConversation
 }) => {
+  const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
+
   return (
-    <div className="bg-white border-b px-6 py-4 shadow-sm z-10">
+    <div className={`border-b ${isDark ? 'border-gray-800 bg-header-bg backdrop-blur-sm' : 'bg-gray-100 border-gray-300'} px-6 py-4 shadow-sm z-10`}>
       <div className="max-w-5xl mx-auto flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Zap size={24} className="text-blue-500" />
-          <h1 className="text-xl font-bold text-gray-800 tracking-tight">Multimodal RAG Assistant</h1>
+        <div className="flex items-center gap-3">
+          {isDark ? (
+            <>
+              <div className="w-10 h-10 rounded-full flex items-center justify-center tech-gradient futuristic-glow">
+                <Zap size={20} className="text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
+                  Multimodal RAG Assistant
+                </h1>
+                <p className="text-xs text-gray-400">Powered by advanced AI</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <Zap size={24} className="text-blue-500" />
+              <h1 className="text-xl font-bold text-gray-800 tracking-tight">Multimodal RAG Assistant</h1>
+            </>
+          )}
         </div>
         
         <div className="flex items-center gap-4">
-          <div className="flex items-center bg-gray-100 rounded-full px-3 py-1.5 text-sm font-medium text-gray-700">
-            <span className="mr-2">Mode:</span>
-            <select 
-              value={mode} 
-              onChange={onModeChange}
-              className="bg-transparent border-none focus:outline-none focus:ring-0 text-blue-600 font-semibold"
-            >
-              <option value="explore">Explore</option>
-              <option value="setup">Setup</option>
-            </select>
+          <div className={`flex items-center rounded-full px-4 py-2 text-sm ${
+            isDark 
+              ? 'bg-secondary-bg border border-gray-700' 
+              : 'bg-gray-100 border border-gray-300'
+          }`}>
+            <ModeDropdown value={mode} onChange={onModeChange} />
           </div>
           
           <button 
+            onClick={toggleTheme} 
+            className={`p-2 rounded-full ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-600'} transition-colors`}
+            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {isDark ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          
+          <button 
             onClick={onClearConversation} 
-            className="p-2 rounded-full hover:bg-gray-100 transition-colors"
+            className={`p-2 rounded-full ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-600'} transition-colors`}
             title="Clear conversation"
           >
-            <Trash2 size={18} className="text-gray-600" />
+            <Trash2 size={18} />
           </button>
         </div>
       </div>

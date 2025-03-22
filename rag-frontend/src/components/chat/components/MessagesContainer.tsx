@@ -3,6 +3,7 @@ import React, { useRef, useEffect } from 'react';
 import { Message } from '../types';
 import MessageItem from './MessageItem';
 import WelcomeScreen from './WelcomeScreen';
+import { useTheme } from '@/components/ThemeProvider';
 
 interface MessagesContainerProps {
   messages: Message[];
@@ -22,6 +23,8 @@ const MessagesContainer: React.FC<MessagesContainerProps> = ({
   onOpenImageModal
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -29,7 +32,13 @@ const MessagesContainer: React.FC<MessagesContainerProps> = ({
   }, [messages]);
 
   return (
-    <div className="flex-1 overflow-y-auto py-6 px-4">
+    <div 
+      className={`flex-1 overflow-y-auto py-6 px-4 ${isDark ? 'bg-[#0a0a14]' : 'bg-gray-200'}`}
+      style={{
+        scrollbarColor: isDark ? '#374151 #131520' : '#cbd5e1 #f1f5f9',
+        scrollbarWidth: 'thin'
+      }}
+    >
       <div className="max-w-5xl mx-auto space-y-5">
         {messages.length === 0 ? (
           <WelcomeScreen />

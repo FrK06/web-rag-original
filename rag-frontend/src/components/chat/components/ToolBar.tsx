@@ -2,6 +2,7 @@
 import React from 'react';
 import { Search, Globe, MessageSquare, Phone, Mic, ImageIcon } from 'lucide-react';
 import ToolButton from './ToolButton';
+import { useTheme } from '@/components/ThemeProvider';
 
 interface ToolBarProps {
   activeTools: string[];
@@ -9,6 +10,9 @@ interface ToolBarProps {
 }
 
 const ToolBar: React.FC<ToolBarProps> = ({ activeTools, threadId }) => {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+
   return (
     <div className="flex flex-wrap gap-3 mb-4 justify-center">
       <ToolButton 
@@ -49,8 +53,12 @@ const ToolBar: React.FC<ToolBarProps> = ({ activeTools, threadId }) => {
       />
       
       {threadId && (
-        <div className="ml-auto text-xs text-gray-500 flex items-center bg-gray-100 rounded-full px-3 py-2">
-          <span className="font-medium text-gray-600 mr-1">Session:</span> {threadId.substring(0, 8)}...
+        <div className={`ml-auto text-xs flex items-center rounded-full px-3 py-2 ${
+          isDark 
+            ? 'text-gray-400 bg-gray-900/50 border border-gray-700/50' 
+            : 'text-gray-500 bg-gray-100 border border-gray-300 shadow-sm'
+        }`}>
+          <span className={`font-medium mr-1 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>Session:</span> {threadId.substring(0, 8)}...
         </div>
       )}
     </div>

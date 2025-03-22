@@ -1,8 +1,8 @@
 // src/components/chat/utils/messageStyles.ts
 export const messageStyles = {
-    user: 'bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200 shadow-sm',
-    assistant: 'bg-gradient-to-r from-gray-50 to-gray-100 border-gray-200 shadow-sm',
-    tool: 'bg-gradient-to-r from-amber-50 to-amber-100 border-amber-200 shadow-sm',
-    error: 'bg-gradient-to-r from-red-50 to-red-100 border-red-200 shadow-sm',
-    system: 'bg-gradient-to-r from-purple-50 to-purple-100 border-purple-200 shadow-sm'
-  };
+  user: 'bg-blue-50 border-blue-200 dark:bg-indigo-900/30 dark:border-indigo-800/40 shadow-sm',
+  assistant: 'bg-gray-50 border-gray-200 dark:bg-gray-800/40 dark:border-gray-700/40 shadow-sm',
+  tool: 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800/30 shadow-sm',
+  error: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800/30 shadow-sm',
+  system: 'bg-purple-50 border-purple-200 dark:bg-purple-900/30 dark:border-purple-800/30 shadow-sm'
+};
