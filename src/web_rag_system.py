@@ -10,6 +10,10 @@ from src.core.vector_store import VectorStore
 from src.core.workflow import RAGWorkflow
 from src.tools.image_tools import ImageTools
 import re
+import urllib.parse
+from urllib.parse import urlparse
+from collections import defaultdict
+
 # Create LangChain agent
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -125,11 +129,107 @@ class WebRAGSystem:
             # Get response from the LLM
             response = self.llm.invoke(messages)
             
+            # Format the search results better if they're present
+            if hasattr(response, 'content') and 'search_web' in str(response.content).lower():
+                # Extract and enhance search results formatting
+                response.content = self._enhance_search_results_formatting(response.content)
+            
             return {"messages": current_messages + [response]}
             
         except Exception as e:
             print(f"Error in RAG processing: {str(e)}")
             return {"messages": current_messages + [AIMessage(content=f"An error occurred while processing your question: {str(e)}")]}
+    
+    def _enhance_search_results_formatting(self, content: str) -> str:
+        """
+        Enhances the formatting of search results in the response
+        to provide better summaries and clearly show 5 sources.
+        """
+        # Identify if this is a search response by patterns
+        if not any(term in content.lower() for term in [
+            "search results",
+            "found online",
+            "according to",
+            "sources:"
+        ]):
+            return content
+        
+        # Split into different parts - summary and sources
+        parts = re.split(r'(?i)(sources:|references:|from these sources:)', content, 1)
+        
+        if len(parts) < 2:
+            # No clear separation, just return the original
+            return content
+        
+        summary_part = parts[0].strip()
+        sources_part = ''.join(parts[1:]).strip()
+        
+        # Enhance the summary by extracting key points
+        summary_enhanced = self._extract_and_format_key_points(summary_part)
+        
+        # Format the sources section to clearly show 5 sources
+        sources_enhanced = self._format_sources_section(sources_part)
+        
+        # Combine enhanced sections
+        return f"{summary_enhanced}\n\n**Sources:**\n{sources_enhanced}"
+
+    def _extract_and_format_key_points(self, summary: str) -> str:
+        """
+        Extract and format key points from the summary into a well-structured format.
+        """
+        # First, check if the summary is already well-structured
+        if "**" in summary or summary.strip().startswith("1."):
+            return summary
+        
+        # Try to break into paragraphs and format each as a key point
+        paragraphs = [p.strip() for p in summary.split('\n') if p.strip()]
+        
+        if len(paragraphs) >= 3:
+            # Good structure, format as key points
+            formatted = "**Summary of Key Findings:**\n\n"
+            for i, para in enumerate(paragraphs, 1):
+                if len(para) > 20:  # Only include substantial paragraphs
+                    formatted += f"{i}. {para}\n\n"
+            return formatted
+        else:
+            # Not enough paragraphs, return as is with a header
+            return f"**Summary:**\n\n{summary}"
+
+    def _format_sources_section(self, sources: str) -> str:
+        """
+        Format the sources section to consistently show 5 sources in a clean format.
+        """
+        # Extract source URLs and titles
+        source_matches = re.findall(r'(?i)(?:(?:\d+\.|\-|\*)\s*)?(?:\[?([^\]]+)\]?)?\s*(?:\()?(https?://[^\s\)]+)(?:\))?', sources)
+        
+        formatted_sources = ""
+        sources_seen = set()
+        source_count = 0
+        
+        # Format each source
+        for i, (title, url) in enumerate(source_matches, 1):
+            if url in sources_seen:
+                continue
+                
+            sources_seen.add(url)
+            domain = urlparse(url).netloc
+            
+            # Clean up the title or use domain if missing
+            if not title or len(title) < 3:
+                title = domain
+                
+            formatted_sources += f"{i}. [{title}]({url})\n"
+            source_count += 1
+            
+            if source_count >= 5:
+                break
+        
+        # If we don't have enough sources, add placeholders
+        while source_count < 5:
+            source_count += 1
+            formatted_sources += f"{source_count}. [Additional information not available]\n"
+        
+        return formatted_sources
         
     def _extract_phone_number_from_history(self, thread_id: str) -> Optional[str]:
         """Extract phone number from conversation history"""
@@ -327,6 +427,14 @@ class WebRAGSystem:
             # Add explicit instructions for SMS and calling
             system_prompt += "\n\nIMPORTANT: When asked to send an SMS or make a call, use the appropriate tool (send_sms or make_call) directly. Do not hesitate to use these tools when explicitly requested."
             
+            # Add enhanced search instructions
+            system_prompt += "\n\nWhen using the search_web tool to respond to queries about news, events, or information:"
+            system_prompt += "\n1. Always find at least 5 relevant sources from diverse websites"
+            system_prompt += "\n2. Structure your response with a clear, well-organized summary of key findings"
+            system_prompt += "\n3. List all 5 sources with proper links at the end of your response"
+            system_prompt += "\n4. Prefer recent sources when available"
+            system_prompt += "\n5. Present information in a factual, balanced way, highlighting agreements and differences between sources"
+            
             # Augment system prompt with project context if available
             if project_context:
                 project_context_str = "\n\nProject Context:\n"
@@ -391,6 +499,10 @@ class WebRAGSystem:
                 print(f"DEBUG - Intermediate steps: {steps}")
                 # Fallback response if template wasn't filled
                 output = "I apologize for the error in processing your request. Could you please rephrase your question?"
+            
+            # Apply search results enhancement
+            if "search_web" in str(steps).lower():
+                output = self._enhance_search_results_formatting(output)
             
             # Update conversation history
             self.conversation_history[thread_id].append(HumanMessage(content=query))
