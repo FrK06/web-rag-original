@@ -468,8 +468,8 @@ const ChatInterface: React.FC = () => {
       />
 
       {/* Tool Bar */}
-      <div className={`py-3 px-6 ${
-        isDark ? 'bg-toolbar-bg backdrop-blur-sm' : 'bg-gray-200'
+      <div className={`py-1 px-6 ${
+        isDark ? 'bg-[#0a0a14]' : 'bg-gray-200'
       }`}>
         <div className="max-w-5xl mx-auto">
           <ToolBar 

@@ -19,7 +19,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   const isDark = theme === 'dark';
 
   return (
-    <div className={`border-b ${isDark ? 'border-gray-800 bg-header-bg backdrop-blur-sm' : 'bg-gray-100 border-gray-300'} px-6 py-4 shadow-sm z-10`}>
+    <div className={`${isDark ? 'bg-[#0a0a14]' : 'bg-gray-200'} px-6 py-4 z-10`}>
       <div className="max-w-5xl mx-auto flex justify-between items-center">
         <div className="flex items-center gap-3">
           {isDark ? (
