@@ -31,7 +31,7 @@ const SpeechRecognitionButton: React.FC<SpeechRecognitionButtonProps> = ({
     <button
       type="button"
       onClick={isListening ? onStopListening : onStartListening}
-      className={`absolute right-14 top-1/2 transform -translate-y-1/2 p-2 rounded-full transition-all ${
+      className={`absolute right-14 top-4 p-2 rounded-full transition-all ${
         isListening 
           ? isDark 
             ? 'bg-red-900 text-red-200 pulse-effect' 
