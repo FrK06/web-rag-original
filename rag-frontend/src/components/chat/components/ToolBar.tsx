@@ -14,7 +14,7 @@ const ToolBar: React.FC<ToolBarProps> = ({ activeTools, threadId }) => {
   const isDark = theme === 'dark';
 
   return (
-    <div className="flex flex-wrap gap-3 mb-4 justify-center">
+    <div className="flex flex-wrap gap-3 justify-center">
       <ToolButton 
         label="Web Search" 
         icon={Search} 

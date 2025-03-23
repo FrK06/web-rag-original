@@ -41,7 +41,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const isDark = theme === 'dark';
 
   return (
-    <div className={`border-t ${isDark ? 'border-gray-800 bg-secondary-bg backdrop-blur-sm' : 'bg-gray-100 border-gray-300'} p-6 shadow-lg`}>
+    <div className={`${isDark ? 'bg-[#0a0a14]' : 'bg-gray-200'} pt-2 pb-6 px-6`}>
       <div className="max-w-5xl mx-auto">
         {/* Attached Images Preview */}
         {attachedImages.length > 0 && (
