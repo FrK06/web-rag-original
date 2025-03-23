@@ -1,5 +1,5 @@
 import { Geist } from 'next/font/google';
-import ChatInterface from '@/components/ChatInterface';
+import { ChatInterface } from '@/components/chat';
 
 const geist = Geist({
   subsets: ['latin'],
@@ -7,8 +7,8 @@ const geist = Geist({
 
 export default function Home() {
   return (
-    <div className={`${geist.className} min-h-screen bg-white`}>
+    <main className={`${geist.className} min-h-screen`}>
       <ChatInterface />
-    </div>
+    </main>
   );
 }

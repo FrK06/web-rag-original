@@ -7,6 +7,7 @@ from src.tools.web_searcher import WebSearcher
 from src.tools.twilio import TwilioService
 from src.tools.speech_tools import SpeechTools
 from src.tools.image_tools import ImageTools  # Import the image tools
+from urllib.parse import urlparse
 
 class RAGTools:
     def __init__(self):
@@ -19,8 +20,32 @@ class RAGTools:
     def get_tools(self):
         @tool
         def search_web(query: str) -> list:
-            """Search the web using Google"""
-            return self.searcher.search(query)
+            """Search the web using Google and provide comprehensive results"""
+            results = self.searcher.search(query, max_results=10)
+            
+            # Always return at least 5 results if available
+            if len(results) < 5:
+                # Expand search with a broader query
+                broader_query = ' '.join(query.split()[:3]) + " recent news"
+                additional_results = self.searcher.search(broader_query)
+                results.extend([r for r in additional_results if r['link'] not in [x['link'] for x in results]])
+                
+            # Format results for better readability and context
+            formatted_results = []
+            for r in results[:5]:  # Limit to 5 results
+                source = urlparse(r['link']).netloc
+                # Clean up the title and snippet
+                title = r['title'].replace(' | ', ' - ').replace(' - ', ' - ')
+                snippet = r['snippet'].replace('...', '').strip()
+                formatted_result = {
+                    "link": r['link'],
+                    "title": title,
+                    "snippet": snippet,
+                    "source": source
+                }
+                formatted_results.append(formatted_result)
+                
+            return formatted_results
             
         @tool
         def scrape_webpage(url: str) -> str:

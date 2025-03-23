@@ -4,17 +4,16 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Union
 import os
-#import io
+import re
+from urllib.parse import urlparse
+from collections import defaultdict
 from dotenv import load_dotenv
 from src.web_rag_system import WebRAGSystem
 from src.tools.speech_tools import SpeechTools
-from src.tools.image_tools import ImageTools  # Import ImageTools
+from src.tools.image_tools import ImageTools
 from datetime import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-#import base64
-import re
-
 
 # Load environment variables
 load_dotenv()
@@ -160,7 +159,7 @@ def detect_tools_used(response: str) -> List[str]:
     tools_used = []
     
     # Detect tool usage based on response content
-    if any(term in response.lower() for term in ["search result", "found information", "according to"]):
+    if any(term in response.lower() for term in ["search result", "found information", "according to", "sources:"]):
         tools_used.append("web-search")
     
     if any(term in response.lower() for term in ["scraped", "from the website", "page content"]):
@@ -183,7 +182,43 @@ def detect_tools_used(response: str) -> List[str]:
     
     return tools_used
 
-# In app.py, find the chat_endpoint function and update it
+def format_search_results(response: str) -> str:
+    """
+    Format search results to ensure they have a good summary and 5 sources.
+    This function is used as a final processing step before sending to frontend.
+    """
+    # Check if we have search results
+    if not any(term in response.lower() for term in ["search results", "found online", "according to"]):
+        return response
+        
+    # Split into summary and sources if possible
+    parts = re.split(r'(?i)(sources:|references:|according to these sources:)', response, 1)
+    
+    if len(parts) < 2:
+        # No clear separation, return the original
+        return response
+        
+    summary_part = parts[0].strip()
+    sources_part = ''.join(parts[1:]).strip()
+    
+    # Extract source links from the response
+    source_links = re.findall(r'(?i)(?:\[([^\]]+)\])?\((https?://[^\s\)]+)\)', response)
+    if not source_links:
+        source_links = re.findall(r'(?i)(?:(?:\d+\.|\-|\*)\s*)?(?:\[?([^\]]+)\]?)?\s*(?:\()?(https?://[^\s\)]+)(?:\))?', sources_part)
+    
+    # If we have fewer than 5 sources, add placeholders
+    if len(source_links) < 5:
+        source_count = len(source_links)
+        formatted_sources = sources_part + "\n\n"
+        while source_count < 5:
+            source_count += 1
+            formatted_sources += f"{source_count}. [Additional relevant information unavailable]\n"
+        
+        return f"{summary_part}\n\n**Sources:**\n{formatted_sources}"
+    
+    return response
+
+# Modify the chat_endpoint function in app.py to add structured JSON search results
 
 @app.post("/api/chat/")
 async def chat_endpoint(message: ChatMessage):
@@ -223,6 +258,12 @@ async def chat_endpoint(message: ChatMessage):
         # Detect which tools were used based on response content
         tools_used = detect_tools_used(response)
         
+        # Extract and format search results if web search was used
+        search_results_data = None
+        if "web-search" in tools_used:
+            search_results_data = extract_search_results_json(response)
+            response = format_search_results(response)
+        
         # Check for images in the response
         image_urls = []
         base64_regex = r'(data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+)'
@@ -234,7 +275,8 @@ async def chat_endpoint(message: ChatMessage):
             "tools_used": tools_used,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "thread_id": thread_id,
-            "image_urls": image_urls
+            "image_urls": image_urls,
+            "search_results": search_results_data  # New field with structured data
         }
     
     except Exception as e:
@@ -243,6 +285,125 @@ async def chat_endpoint(message: ChatMessage):
             status_code=500,
             detail=f"An error occurred: {str(e)}"
         )
+
+# Add this new function to extract search results and format as JSON
+def extract_search_results_json(response: str) -> Optional[dict]:
+    """
+    Extract search results from the response and format as structured JSON.
+    
+    Returns:
+        Dictionary with 'summary' and 'results' fields, or None if not a search result
+    """
+    # First check if this has search results (quick check before more expensive parsing)
+    if not any(term in response.lower() for term in [
+        "search results", "found online", "according to", "sources", "found information"
+    ]):
+        return None
+    
+    # Try to split into summary and sources
+    parts = re.split(r'(?i)(sources:|references:|found these sources:|results from search:)', response, 1)
+    
+    summary = ""
+    results = []
+    
+    if len(parts) > 1:
+        # We have a clear division between summary and sources
+        summary = parts[0].strip()
+        sources_section = ''.join(parts[1:]).strip()
+        
+        # Look for numbered list items with links
+        # Pattern 1: Markdown links [title](url)
+        link_pattern = r'(?:\d+\.\s*)?(?:\*\*)?([^\*\]]+)(?:\*\*)?(?::\s*)?\[([^\]]*)\]\(([^)]+)\)'
+        for match in re.finditer(link_pattern, sources_section):
+            # Check if the first group is empty
+            title = match.group(1).strip() if match.group(1).strip() else match.group(2).strip()
+            link = match.group(3).strip()
+            
+            # Extract domain for source
+            try:
+                domain = urlparse(link).netloc
+            except:
+                domain = "unknown source"
+            
+            # Find snippet by looking at surrounding text
+            snippet_start = match.end()
+            snippet_end = sources_section.find("\n", snippet_start)
+            if snippet_end == -1:
+                snippet_end = len(sources_section)
+            
+            snippet = sources_section[snippet_start:snippet_end].strip()
+            if not snippet or len(snippet) < 10:
+                # Default snippet if we couldn't find one
+                snippet = f"Information from {domain}"
+            
+            results.append({
+                "title": title,
+                "link": link,
+                "snippet": snippet,
+                "source": domain
+            })
+        
+        # If the pattern didn't match, try a simpler one for numbered lists
+        if not results:
+            simple_pattern = r'(\d+)\.\s*(.*?)(https?://[^\s)]+)'
+            for match in re.finditer(simple_pattern, sources_section):
+                title = match.group(2).strip()
+                link = match.group(3).strip()
+                
+                try:
+                    domain = urlparse(link).netloc
+                except:
+                    domain = "unknown source"
+                
+                results.append({
+                    "title": title,
+                    "link": link,
+                    "snippet": f"Information from {domain}",
+                    "source": domain
+                })
+    else:
+        # No clear division, check for links in the full text
+        # We'll have to approximate the summary
+        link_matches = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', response)
+        if link_matches:
+            # Take the text before the first link as summary
+            first_link_pos = response.find(f"[{link_matches[0][0]}]")
+            if first_link_pos > 100:  # Ensure we have enough text for a summary
+                summary = response[:first_link_pos].strip()
+            else:
+                summary = "Search results found the following information:"
+            
+            # Process each link
+            for title, link in link_matches:
+                try:
+                    domain = urlparse(link).netloc
+                except:
+                    domain = "unknown source"
+                
+                results.append({
+                    "title": title,
+                    "link": link,
+                    "snippet": f"Information from {domain}",
+                    "source": domain
+                })
+    
+    # If we need to add placeholder results to reach 5 sources
+    while len(results) < 5:
+        results.append({
+            "title": f"Additional information not available ({len(results) + 1})",
+            "link": "",
+            "snippet": "No additional sources found",
+            "source": "unavailable"
+        })
+    
+    # Limit to 5 most relevant results
+    if len(results) > 5:
+        results = results[:5]
+    
+    return {
+        "summary": summary,
+        "results": results
+    }
 
 @app.post("/api/speech-to-text/")
 async def speech_to_text_endpoint(audio_data: AudioData):
@@ -315,10 +476,7 @@ async def text_to_speech_endpoint(request: TTSRequest):
         raise HTTPException(
             status_code=500,
             detail=f"TTS processing error: {str(e)}"
-     
         )
-
-# Add this to app.py to enable direct image generation without going through the RAG system
 
 @app.post("/api/direct-image-generation/")
 async def direct_image_generation(request: ImageRequest):
@@ -498,10 +656,11 @@ async def health_check():
         # Basic check that systems are initialized
         return {
             "status": "healthy", 
-            "version": "0.2",
+            "version": "0.3",  # Updated version to reflect enhancements
             "llm_model": rag_system.llm.model,
             "speech_enabled": True,
-            "image_enabled": True
+            "image_enabled": True,
+            "enhanced_search": True  # New flag indicating enhanced search is enabled
         }
     except Exception as e:
         return {
