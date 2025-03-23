@@ -1,4 +1,4 @@
-// src/components/chat/components/ToolBar.tsx
+// // src/components/chat/components/ToolBar.tsx
 import React from 'react';
 import { Search, Globe, MessageSquare, Phone, Mic, ImageIcon } from 'lucide-react';
 import ToolButton from './ToolButton';

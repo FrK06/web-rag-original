@@ -1,4 +1,4 @@
-// src/components/chat/components/WelcomeScreen.tsx
+// //src/components/chat/components/WelcomeScreen.tsx
 import React from 'react';
 import { Search, ImageIcon, Mic, ChevronRight } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';

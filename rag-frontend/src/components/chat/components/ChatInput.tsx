@@ -1,4 +1,4 @@
-// src/components/chat/components/ChatInput.tsx
+// // src/components/chat/components/ChatInput.tsx
 import React, { useRef } from 'react';
 import { Send, Loader2, Upload, X, Sparkles } from 'lucide-react';
 import SpeechRecognitionButton from './SpeechRecognitionButton';

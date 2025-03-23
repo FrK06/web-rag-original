@@ -47,7 +47,7 @@ body {
   transition: background-color 0.3s, color 0.3s;
 }
 
-/* Light mode - clean background */
+/*/* Light mode - clean background */
 html.light body {
   background-image: none;
   background: #ffffff;

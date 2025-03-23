@@ -1,4 +1,4 @@
-// src/components/chat/components/ModeDropdown.tsx
+// //src/components/chat/components/ModeDropdown.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';

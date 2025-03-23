@@ -1,4 +1,4 @@
-// src/components/chat/components/SpeechRecognitionButton.tsx
+// // src/components/chat/components/SpeechRecognitionButton.tsx
 import React from 'react';
 import { Mic } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';

@@ -1,4 +1,4 @@
-// src/components/chat/components/MessagesContainer.tsx
+// // src/components/chat/components/MessagesContainer.tsx
 import React, { useRef, useEffect } from 'react';
 import { Message } from '../types';
 import MessageItem from './MessageItem';

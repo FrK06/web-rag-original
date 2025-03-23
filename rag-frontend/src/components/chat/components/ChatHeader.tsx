@@ -1,4 +1,4 @@
-// src/components/chat/components/ChatHeader.tsx
+// // src/components/chat/components/ChatHeader.tsx
 import React from 'react';
 import { Zap, Trash2, Moon, Sun } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';

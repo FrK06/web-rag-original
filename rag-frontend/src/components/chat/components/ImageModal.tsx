@@ -1,4 +1,4 @@
-// src/components/chat/components/ImageModal.tsx
+// // src/components/chat/components/ImageModal.tsx
 import React from 'react';
 import { X, Search, Settings } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';

@@ -1,4 +1,4 @@
-// src/components/chat/ChatInterface.tsx
+// //src/components/chat/ChatInterface.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import { Message } from './types';
 import { detectToolsFromMessage } from './utils/toolDetection';
