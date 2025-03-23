@@ -319,96 +319,98 @@ const ChatInterface: React.FC = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() && attachedImages.length === 0) return;
+// In ChatInterface.tsx:
 
-    // Create message content
-    let messageContent = input.trim();
-    if (!messageContent && attachedImages.length > 0) {
-      messageContent = "Here's an image for analysis"; // Default text if only image is attached
-    }
-    
-    const newMessage: Message = {
-      type: 'user',
-      content: messageContent,
-      timestamp: new Date().toLocaleTimeString()
-    };
-    
-    // If there are attached images, add the first one to the message
-    if (attachedImages.length > 0) {
-      newMessage.imageUrl = attachedImages[0];
-    }
+const handleSubmit = async (e: React.FormEvent | React.KeyboardEvent) => {
+  if (e && e.preventDefault) e.preventDefault();
+  if (!input.trim() && attachedImages.length === 0) return;
 
-    setMessages(prev => [...prev, newMessage]);
-    setInput('');
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await sendMessage(messageContent, threadId, mode, attachedImages, messages);
-      
-      // Set thread ID if returned
-      if (response.thread_id) {
-        setThreadId(response.thread_id);
-      }
-      
-      // Detect which tools were used
-      const toolsUsed = response.tools_used.length > 0 
-        ? response.tools_used 
-        : detectToolsFromMessage(response.message);
-      
-      // Set active tools
-      if (toolsUsed.length > 0) {
-        setActiveTools(toolsUsed);
-        
-        // Remove tool indicators after delay
-        setTimeout(() => {
-          setActiveTools([]);
-        }, 5000);
-      }
-      
-      // If response message is empty, it means we've already handled it (like direct image generation)
-      if (response.message) {
-        // Check if the response contains any image URLs
-        const imageUrl = response.image_urls && response.image_urls.length > 0 
-          ? response.image_urls[0] 
-          : undefined;
-        
-        // Add assistant response
-        const assistantResponse = {
-          type: 'assistant',
-          content: response.message,
-          timestamp: response.timestamp || new Date().toLocaleTimeString(),
-          imageUrl: imageUrl // Include the image URL if available
-        };
-        
-        setMessages(prev => [...prev, assistantResponse]);
+  // Create message content
+  let messageContent = input.trim();
+  if (!messageContent && attachedImages.length > 0) {
+    messageContent = "Here's an image for analysis"; // Default text if only image is attached
+  }
   
-        // If there's a source URL, add it
-        if (response.source_url) {
-          setMessages(prev => [...prev, {
-            type: 'tool',
-            content: `Source: ${response.source_url}`,
-            timestamp: new Date().toLocaleTimeString()
-          }]);
-        }
-      }
-      
-      // Clear attached images after sending
-      setAttachedImages([]);
-
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'An unexpected error occurred');
-      setMessages(prev => [...prev, {
-        type: 'error',
-        content: error instanceof Error ? error.message : 'An error occurred while processing your request.',
-        timestamp: new Date().toLocaleTimeString()
-      }]);
-    } finally {
-      setIsLoading(false);
-    }
+  const newMessage: Message = {
+    type: 'user',
+    content: messageContent,
+    timestamp: new Date().toLocaleTimeString()
   };
+  
+  // If there are attached images, add the first one to the message
+  if (attachedImages.length > 0) {
+    newMessage.imageUrl = attachedImages[0];
+  }
+
+  setMessages(prev => [...prev, newMessage]);
+  setInput('');
+  setIsLoading(true);
+  setError(null);
+
+  try {
+    const response = await sendMessage(messageContent, threadId, mode, attachedImages, messages);
+    
+    // Set thread ID if returned
+    if (response.thread_id) {
+      setThreadId(response.thread_id);
+    }
+    
+    // Detect which tools were used
+    const toolsUsed = response.tools_used.length > 0 
+      ? response.tools_used 
+      : detectToolsFromMessage(response.message);
+    
+    // Set active tools
+    if (toolsUsed.length > 0) {
+      setActiveTools(toolsUsed);
+      
+      // Remove tool indicators after delay
+      setTimeout(() => {
+        setActiveTools([]);
+      }, 5000);
+    }
+    
+    // If response message is empty, it means we've already handled it (like direct image generation)
+    if (response.message) {
+      // Check if the response contains any image URLs
+      const imageUrl = response.image_urls && response.image_urls.length > 0 
+        ? response.image_urls[0] 
+        : undefined;
+      
+      // Add assistant response
+      const assistantResponse = {
+        type: 'assistant',
+        content: response.message,
+        timestamp: response.timestamp || new Date().toLocaleTimeString(),
+        imageUrl: imageUrl // Include the image URL if available
+      };
+      
+      setMessages(prev => [...prev, assistantResponse]);
+
+      // If there's a source URL, add it
+      if (response.source_url) {
+        setMessages(prev => [...prev, {
+          type: 'tool',
+          content: `Source: ${response.source_url}`,
+          timestamp: new Date().toLocaleTimeString()
+        }]);
+      }
+    }
+    
+    // Clear attached images after sending
+    setAttachedImages([]);
+
+  } catch (error) {
+    setError(error instanceof Error ? error.message : 'An unexpected error occurred');
+    setMessages(prev => [...prev, {
+      type: 'error',
+      content: error instanceof Error ? error.message : 'An error occurred while processing your request.',
+      timestamp: new Date().toLocaleTimeString()
+    }]);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const clearConversation = () => {
     // Stop any active speech processes

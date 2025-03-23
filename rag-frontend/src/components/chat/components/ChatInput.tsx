@@ -1,4 +1,4 @@
-// // src/components/chat/components/ChatInput.tsx
+// src/components/chat/components/ChatInput.tsx
 import React, { useRef } from 'react';
 import { Send, Loader2, Upload, X, Sparkles } from 'lucide-react';
 import SpeechRecognitionButton from './SpeechRecognitionButton';
@@ -13,7 +13,7 @@ interface ChatInputProps {
   isImageLoading: boolean;
   speechSupported: boolean;
   attachedImages: string[];
-  onSubmit: (e: React.FormEvent) => Promise<void>;
+  onSubmit: (e: React.FormEvent<HTMLFormElement> | React.KeyboardEvent) => Promise<void>;
   onStartListening: () => void;
   onStopListening: () => void;
   onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
@@ -35,7 +35,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onFileUpload,
   onRemoveImage
 }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -66,28 +66,62 @@ const ChatInput: React.FC<ChatInputProps> = ({
         )}
         
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-start">
             <div className="relative flex-1">
               {isDark ? (
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask me anything or upload an image..."
-                  className="w-full p-4 pr-24 bg-input-bg border border-input-border focus:border-primary rounded-xl focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder-gray-500 shadow-sm futuristic-border"
-                  disabled={isLoading || isListening || isProcessingSpeech || isImageLoading}
-                />
+                <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  // Auto-resize height
+                  e.target.style.height = 'auto';
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 500)}px`;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    onSubmit(e);
+                  }
+                }}
+                placeholder="Ask me anything or upload an image..."
+                className="w-full p-4 pr-24 bg-input-bg border border-input-border focus:border-primary rounded-xl focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder-gray-500 shadow-sm futuristic-border resize-none overflow-y-auto custom-scrollbar"
+                style={{ 
+                  minHeight: '58px', 
+                  maxHeight: '500px',
+                  scrollbarWidth: 'thin', // Firefox
+                  scrollbarColor: '#374151 #1a1c2e' // Firefox
+                }}
+                disabled={isLoading || isListening || isProcessingSpeech || isImageLoading}
+                rows={1}
+              />
               ) : (
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask me anything or upload an image..."
-                  className="w-full p-4 pr-24 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-800 bg-white placeholder-gray-400 shadow-md"
-                  disabled={isLoading || isListening || isProcessingSpeech || isImageLoading}
-                />
+                <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  // Auto-resize height
+                  e.target.style.height = 'auto';
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 500)}px`;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    onSubmit(e);
+                  }
+                }}
+                placeholder="Ask me anything or upload an image..."
+                className="w-full p-4 pr-24 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-800 bg-white placeholder-gray-400 shadow-md resize-none overflow-y-auto custom-scrollbar"
+                style={{ 
+                  minHeight: '58px', 
+                  maxHeight: '500px',
+                  scrollbarWidth: 'thin', // Firefox
+                  scrollbarColor: '#d1d5db #f3f4f6' // Firefox
+                }}
+                disabled={isLoading || isListening || isProcessingSpeech || isImageLoading}
+                rows={1}
+              />
               )}
               
               {/* Speech recognition button */}
@@ -105,7 +139,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className={`absolute right-4 top-1/2 transform -translate-y-1/2 p-2 rounded-full ${
+                className={`absolute right-4 top-4 p-2 rounded-full ${
                   isDark 
                     ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' 
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -130,7 +164,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <button 
               type="submit" 
               disabled={isLoading || isListening || isProcessingSpeech || isImageLoading || (!input.trim() && attachedImages.length === 0)} 
-              className={`px-5 py-4 ${
+              className={`flex items-center justify-center w-14 h-14 ${
                 isDark 
                   ? 'tech-gradient text-white rounded-xl hover:opacity-90 futuristic-glow' 
                   : 'bg-blue-600 text-white rounded-xl hover:bg-blue-700'
