@@ -206,18 +206,14 @@ async def text_to_speech_endpoint(request: TTSRequest):
             media_type=response.headers.get("content-type", "application/json")
         )
 
-@app.post("/api/generate-image/")
-async def generate_image_endpoint(request: ImageRequest):
-    """Forward image generation requests to multimedia service"""
-    async with httpx.AsyncClient(timeout=60.0) as client:
+@app.post("/api/direct-image-generation/")
+async def direct_image_generation_endpoint(request: Request):
+    """Forward direct image generation requests to multimedia service"""
+    data = await request.json()
+    async with httpx.AsyncClient(timeout=60.0) as client:  # Longer timeout for image generation
         response = await client.post(
             f"{SERVICE_MAP['multimedia']}/generate-image",
-            json={
-                "prompt": request.prompt,
-                "size": request.size,
-                "style": request.style,
-                "quality": request.quality
-            }
+            json=data
         )
         
         return Response(

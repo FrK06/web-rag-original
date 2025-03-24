@@ -125,7 +125,7 @@ export const getTextToSpeech = async (text: string): Promise<string> => {
 // Image API
 export const generateImageDirectly = async (prompt: string): Promise<string> => {
   try {
-    const response = await axios.post<ImageGenerationResponse>('http://localhost:8000/api/direct-image-generation/', {
+    const response = await axios.post<ImageGenerationResponse>('http://localhost:8000/api/generate-image/', {
       prompt,
       size: '1024x1024',
       style: 'vivid',

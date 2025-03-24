@@ -2,13 +2,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
-import asyncio
-import aiomongo
+# import asyncio
+# import aiomongo
 import os
 import datetime
 import uuid
-import json
+# import json
 import logging
+from motor.motor_asyncio import AsyncIOMotorClient
+
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -49,7 +51,8 @@ class ConversationUpdate(BaseModel):
 async def startup_event():
     global mongo_client, db, conversations
     try:
-        mongo_client = await aiomongo.AsyncIOMotorClient(MONGO_URI)
+        # Use Motor instead of aiomongo
+        mongo_client = AsyncIOMotorClient(MONGO_URI)
         db = mongo_client[DB_NAME]
         conversations = db[COLLECTION_NAME]
         
@@ -61,6 +64,7 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error connecting to MongoDB: {str(e)}")
         raise e
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
