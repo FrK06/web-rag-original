@@ -1,0 +1,215 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Dict, List, Optional, Any
+import asyncio
+import aiomongo
+import os
+import datetime
+import uuid
+import json
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Conversation Service")
+
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# MongoDB connection settings
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
+DB_NAME = os.getenv("MONGO_DB", "ragassistant")
+COLLECTION_NAME = "conversations"
+
+# MongoDB client - initialized during startup
+mongo_client = None
+db = None
+conversations = None
+
+class ConversationRequest(BaseModel):
+    thread_id: Optional[str] = None
+    message: str
+    conversation_history: List[Dict[str, Any]] = []
+
+class ConversationUpdate(BaseModel):
+    thread_id: str
+    assistant_message: str
+    metadata: Dict[str, Any] = {}
+
+@app.on_event("startup")
+async def startup_event():
+    global mongo_client, db, conversations
+    try:
+        mongo_client = await aiomongo.AsyncIOMotorClient(MONGO_URI)
+        db = mongo_client[DB_NAME]
+        conversations = db[COLLECTION_NAME]
+        
+        # Create indexes
+        await conversations.create_index("thread_id", unique=True)
+        await conversations.create_index("last_updated", expireAfterSeconds=7*24*60*60)  # Auto-expire after 7 days
+        
+        logger.info("Connected to MongoDB")
+    except Exception as e:
+        logger.error(f"Error connecting to MongoDB: {str(e)}")
+        raise e
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    if mongo_client:
+        mongo_client.close()
+        logger.info("Closed MongoDB connection")
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    try:
+        # Ping MongoDB
+        await db.command("ping")
+        return {"status": "healthy", "service": "conversation", "database": "connected"}
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return {"status": "unhealthy", "service": "conversation", "error": str(e)}
+
+@app.post("/store")
+async def store_message(request: ConversationRequest):
+    """Store a new message in the conversation history"""
+    # Generate thread_id if not provided
+    thread_id = request.thread_id or f"thread_{uuid.uuid4().hex}"
+    
+    # Format the message
+    user_message = {
+        "role": "user",
+        "content": request.message,
+        "timestamp": datetime.datetime.utcnow().isoformat()
+    }
+    
+    try:
+        # Check if conversation exists
+        conversation = await conversations.find_one({"thread_id": thread_id})
+        
+        if conversation:
+            # Update existing conversation
+            await conversations.update_one(
+                {"thread_id": thread_id},
+                {
+                    "$push": {"messages": user_message},
+                    "$set": {"last_updated": datetime.datetime.utcnow()}
+                }
+            )
+            history = conversation.get("messages", [])
+            history.append(user_message)
+        else:
+            # Create new conversation
+            history = [user_message]
+            await conversations.insert_one({
+                "thread_id": thread_id,
+                "messages": history,
+                "created_at": datetime.datetime.utcnow(),
+                "last_updated": datetime.datetime.utcnow()
+            })
+        
+        return {
+            "thread_id": thread_id,
+            "history": history[-10:],  # Return last 10 messages to limit size
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error storing message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error storing message: {str(e)}")
+
+@app.post("/update")
+async def update_conversation(request: ConversationUpdate):
+    """Update conversation with assistant's response"""
+    try:
+        # Format the message
+        assistant_message = {
+            "role": "assistant",
+            "content": request.assistant_message,
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "metadata": request.metadata
+        }
+        
+        # Update the conversation
+        result = await conversations.update_one(
+            {"thread_id": request.thread_id},
+            {
+                "$push": {"messages": assistant_message},
+                "$set": {"last_updated": datetime.datetime.utcnow()}
+            }
+        )
+        
+        if result.modified_count == 0:
+            logger.warning(f"Thread {request.thread_id} not found for update")
+            raise HTTPException(status_code=404, detail="Thread not found")
+            
+        return {
+            "thread_id": request.thread_id,
+            "status": "success"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating conversation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating conversation: {str(e)}")
+
+@app.get("/history/{thread_id}")
+async def get_history(thread_id: str, limit: int = 100):
+    """Get conversation history for a thread"""
+    try:
+        conversation = await conversations.find_one({"thread_id": thread_id})
+        
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Thread not found")
+            
+        messages = conversation.get("messages", [])
+        
+        # Apply limit
+        if limit > 0:
+            messages = messages[-limit:]
+            
+        return {
+            "thread_id": thread_id,
+            "messages": messages,
+            "count": len(messages)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving history: {str(e)}")
+
+@app.delete("/delete/{thread_id}")
+async def delete_conversation(thread_id: str):
+    """Delete a conversation thread"""
+    try:
+        result = await conversations.delete_one({"thread_id": thread_id})
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Thread not found")
+            
+        return {
+            "thread_id": thread_id,
+            "status": "deleted"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting conversation: {str(e)}")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
