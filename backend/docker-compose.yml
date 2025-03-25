@@ -1,0 +1,201 @@
+version: '3.8'
+
+services:
+  api-gateway:
+    build:
+      context: ./api_gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - CONVERSATION_SERVICE_URL=http://conversation-service:8001
+      - SEARCH_SERVICE_URL=http://search-service:8002
+      - MULTIMEDIA_SERVICE_URL=http://multimedia-service:8003
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8004
+      - LLM_SERVICE_URL=http://llm-service:8005
+    restart: always
+    depends_on:
+      - conversation-service
+      - search-service
+      - multimedia-service
+      - notification-service
+      - llm-service
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  conversation-service:
+    build:
+      context: ./conversation_service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - MONGO_URI=mongodb://mongo-user:${MONGO_PASSWORD}@mongodb:27017/ragassistant?authSource=admin
+      - MONGO_DB=ragassistant
+    restart: always
+    depends_on:
+      - mongodb
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  search-service:
+    build:
+      context: ./search_service
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_CSE_ID=${GOOGLE_CSE_ID}
+      - REDIS_URI=redis://redis:6379/1
+      - CACHE_TTL=3600
+      - API_REQUEST_LIMIT=100
+    restart: always
+    depends_on:
+      - redis
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  multimedia-service:
+    build:
+      context: ./multimedia_service
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REDIS_URI=redis://redis:6379/2
+      - CACHE_TTL=7200
+      - DALLE_REQUEST_LIMIT=100
+      - WHISPER_REQUEST_LIMIT=100
+      - TTS_REQUEST_LIMIT=100
+      - VISION_REQUEST_LIMIT=100
+    restart: always
+    depends_on:
+      - redis
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  notification-service:
+    build:
+      context: ./notification_service
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8004"
+    environment:
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - TWIML_URL=${TWIML_URL}
+      - REDIS_URI=redis://redis:6379/3
+      - MAX_SMS_PER_DAY=50
+      - MAX_CALLS_PER_DAY=20
+      - RECIPIENT_SMS_LIMIT=5
+      - RECIPIENT_CALL_LIMIT=3
+    restart: always
+    depends_on:
+      - redis
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  llm-service:
+    build:
+      context: ./llm_service
+      dockerfile: Dockerfile
+    ports:
+      - "8005:8005"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEFAULT_MODEL=gpt-4o
+      - REDIS_URI=redis://redis:6379/4
+      - MAX_LLM_REQUESTS=500
+      - CACHE_TTL=1800
+      - SEARCH_SERVICE_URL=http://search-service:8002
+      - MULTIMEDIA_SERVICE_URL=http://multimedia-service:8003
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8004
+    restart: always
+    depends_on:
+      - redis
+      - search-service
+      - multimedia-service
+      - notification-service
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: always
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mongodb:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=mongo-user
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+    restart: always
+    networks:
+      - rag-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  mongo-data:
