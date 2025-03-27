@@ -213,6 +213,66 @@ async def delete_conversation(thread_id: str):
     except Exception as e:
         logger.error(f"Error deleting conversation: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting conversation: {str(e)}")
+    
+@app.get("/threads")
+async def list_threads(limit: int = 20, skip: int = 0):
+    """Get a list of conversation threads with preview information"""
+    try:
+        # Find all conversations, sorted by last_updated (newest first)
+        cursor = conversations.find(
+            {},
+            {"thread_id": 1, "last_updated": 1, "messages": {"$slice": -1}}  # Get only the last message
+        ).sort("last_updated", -1).skip(skip).limit(limit)
+        
+        threads = []
+        async for doc in cursor:
+            # Extract preview info
+            last_message = doc.get("messages", [{}])[0] if doc.get("messages") else {}
+            preview = last_message.get("content", "")
+            if len(preview) > 60:
+                preview = preview[:57] + "..."
+                
+            threads.append({
+                "thread_id": doc.get("thread_id"),
+                "last_updated": doc.get("last_updated").isoformat() if doc.get("last_updated") else "",
+                "preview": preview
+            })
+            
+        return {
+            "threads": threads,
+            "count": len(threads),
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing threads: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error listing threads: {str(e)}")
+    
+@app.get("/history/{thread_id}")
+async def get_history(thread_id: str, limit: int = 100):
+    """Get conversation history for a thread"""
+    try:
+        conversation = await conversations.find_one({"thread_id": thread_id})
+        
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Thread not found")
+            
+        messages = conversation.get("messages", [])
+        
+        # Don't limit the history when retrieving the full context
+        # We'll handle truncation at the LLM level if needed
+            
+        return {
+            "thread_id": thread_id,
+            "messages": messages,
+            "count": len(messages)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving history: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

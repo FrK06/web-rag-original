@@ -283,7 +283,51 @@ async def make_call_endpoint(request: Request):
             status_code=response.status_code,
             media_type=response.headers.get("content-type", "application/json")
         )
+@app.get("/api/conversations/")
+async def list_conversations_endpoint(limit: int = 20, skip: int = 0):
+    """Forward conversation listing requests to conversation service"""
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        response = await client.get(
+            f"{SERVICE_MAP['conversation']}/threads",
+            params={"limit": limit, "skip": skip}
+        )
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type", "application/json")
+        )
 
+@app.get("/api/conversations/{thread_id}")
+async def get_conversation_endpoint(thread_id: str, limit: int = 100):
+    """Forward conversation history requests to conversation service"""
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        response = await client.get(
+            f"{SERVICE_MAP['conversation']}/history/{thread_id}",
+            params={"limit": limit}
+        )
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type", "application/json")
+        )
+
+@app.delete("/api/conversations/{thread_id}")
+async def delete_conversation_endpoint(thread_id: str):
+    """Forward conversation deletion requests to conversation service"""
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        response = await client.delete(
+            f"{SERVICE_MAP['conversation']}/delete/{thread_id}"
+        )
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type", "application/json")
+        )
+    
+    
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
