@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, X, Plus, Clock } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
-import { getConversations } from '../services/apiService';
+import { getConversations, deleteConversation, renameConversation } from '../services/apiService';
 import ConversationContextMenu from './ConversationContextMenu';
 
 interface ThreadPreview {
@@ -68,13 +68,38 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     }
   };
 
-  const handleDeleteConversation = (threadId: string) => {
-    // Remove the thread from the list
-    setThreads(threads.filter(thread => thread.thread_id !== threadId));
-    
-    // If the deleted thread is the current one, start a new conversation
-    if (threadId === currentThreadId) {
-      onNewConversation();
+  const handleDeleteConversation = async (threadId: string) => {
+    try {
+      // Call the API to delete the conversation
+      await deleteConversation(threadId);
+      
+      // Remove the thread from the list
+      setThreads(threads.filter(thread => thread.thread_id !== threadId));
+      
+      // If the deleted thread is the current one, start a new conversation
+      if (threadId === currentThreadId) {
+        onNewConversation();
+      }
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+      setError('Failed to delete conversation');
+    }
+  };
+
+  const handleRenameConversation = async (threadId: string, newName: string) => {
+    try {
+      // Call the API to rename the conversation
+      await renameConversation(threadId, newName);
+      
+      // Update the thread in the list
+      setThreads(threads.map(thread => 
+        thread.thread_id === threadId 
+          ? { ...thread, preview: newName } 
+          : thread
+      ));
+    } catch (error) {
+      console.error('Error renaming conversation:', error);
+      setError('Failed to rename conversation');
     }
   };
 
@@ -164,7 +189,9 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                   <div className={`absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity`}>
                     <ConversationContextMenu 
                       threadId={thread.thread_id}
+                      title={thread.preview || "New Conversation"}
                       onDelete={() => handleDeleteConversation(thread.thread_id)}
+                      onRename={handleRenameConversation}
                     />
                   </div>
                 </div>

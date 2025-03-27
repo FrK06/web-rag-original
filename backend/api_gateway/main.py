@@ -64,6 +64,9 @@ class ImageProcessingRequest(BaseModel):
     image: str  # Base64 encoded image or URL
     operation: str  # Operation to perform
 
+class ConversationRenameRequest(BaseModel):
+    name: str  # New name for the conversation
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint that pings all services"""
@@ -283,6 +286,7 @@ async def make_call_endpoint(request: Request):
             status_code=response.status_code,
             media_type=response.headers.get("content-type", "application/json")
         )
+
 @app.get("/api/conversations/")
 async def list_conversations_endpoint(limit: int = 20, skip: int = 0):
     """Forward conversation listing requests to conversation service"""
@@ -326,8 +330,23 @@ async def delete_conversation_endpoint(thread_id: str):
             status_code=response.status_code,
             media_type=response.headers.get("content-type", "application/json")
         )
-    
-    
+
+# New endpoint for renaming conversations
+@app.put("/api/conversations/{thread_id}/rename")
+async def rename_conversation_endpoint(thread_id: str, request: ConversationRenameRequest):
+    """Forward conversation renaming requests to conversation service"""
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        response = await client.put(
+            f"{SERVICE_MAP['conversation']}/rename/{thread_id}",
+            json={"name": request.name}
+        )
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type", "application/json")
+        )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

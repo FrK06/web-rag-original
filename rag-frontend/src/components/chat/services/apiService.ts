@@ -269,3 +269,18 @@ export const deleteConversation = async (threadId: string): Promise<{status: str
     throw new Error('Failed to delete conversation');
   }
 };
+
+/**
+ * Renames a conversation thread
+ */
+export const renameConversation = async (threadId: string, newName: string): Promise<{status: string}> => {
+  try {
+    const response = await axios.put(`http://localhost:8000/api/conversations/${threadId}/rename`, {
+      name: newName
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error renaming conversation:', error);
+    throw new Error('Failed to rename conversation');
+  }
+};
