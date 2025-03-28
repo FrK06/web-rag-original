@@ -1,4 +1,4 @@
-// //src/components/chat/ChatInterface.tsx
+// src/components/chat/ChatInterface.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import { Message } from './types';
 import { detectToolsFromMessage } from './utils/toolDetection';
@@ -7,7 +7,8 @@ import {
   processSpeech, 
   getTextToSpeech,
   analyzeImage,
-  processImage
+  processImage,
+  getConversationHistory
 } from './services/apiService';
 import { useTheme } from '@/components/ThemeProvider';
 
@@ -17,6 +18,7 @@ import MessagesContainer from './components/MessagesContainer';
 import ToolBar from './components/ToolBar';
 import ChatInput from './components/ChatInput';
 import ImageModal from './components/ImageModal';
+import ConversationSidebar from './components/ConversationSidebar';
 
 const ChatInterface: React.FC = () => {
   // Theme state
@@ -46,6 +48,9 @@ const ChatInterface: React.FC = () => {
   const [isImageLoading, setIsImageLoading] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Media recorder
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -90,6 +95,56 @@ const ChatInterface: React.FC = () => {
       }
     };
   }, [currentAudio]);
+
+  // Handle thread selection from sidebar
+  const handleThreadSelect = async (selectedThreadId: string) => {
+    setIsLoading(true);
+    try {
+      const history = await getConversationHistory(selectedThreadId);
+      
+      // Convert messages to the format used by the UI
+      const formattedMessages = history.messages.map(msg => {
+        const message: Message = {
+          type: msg.role === 'user' ? 'user' : 'assistant',
+          content: msg.content,
+          timestamp: new Date(msg.timestamp).toLocaleTimeString()
+        };
+        
+        // Add imageUrl if present in metadata
+        if (msg.metadata?.imageUrl) {
+          message.imageUrl = msg.metadata.imageUrl;
+        }
+        
+        return message;
+      });
+      
+      setMessages(formattedMessages);
+      setThreadId(selectedThreadId);
+      setSidebarOpen(false);
+      
+      // Show a system message to indicate thread selection
+      // This helps provide visual feedback that we're in a different conversation
+      setMessages(prev => [
+        ...formattedMessages,
+        {
+          type: 'system',
+          content: 'Loaded previous conversation',
+          timestamp: new Date().toLocaleTimeString()
+        }
+      ]);
+    } catch (error) {
+      setError('Failed to load conversation history');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startNewConversation = () => {
+    setThreadId(null);
+    setMessages([]);
+    setSidebarOpen(false);
+    inputRef.current?.focus();
+  };
 
   // Handle file upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -319,98 +374,97 @@ const ChatInterface: React.FC = () => {
     }
   };
 
-// In ChatInterface.tsx:
+  // Submit the message
+  const handleSubmit = async (e: React.FormEvent | React.KeyboardEvent) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!input.trim() && attachedImages.length === 0) return;
 
-const handleSubmit = async (e: React.FormEvent | React.KeyboardEvent) => {
-  if (e && e.preventDefault) e.preventDefault();
-  if (!input.trim() && attachedImages.length === 0) return;
-
-  // Create message content
-  let messageContent = input.trim();
-  if (!messageContent && attachedImages.length > 0) {
-    messageContent = "Here's an image for analysis"; // Default text if only image is attached
-  }
-  
-  const newMessage: Message = {
-    type: 'user',
-    content: messageContent,
-    timestamp: new Date().toLocaleTimeString()
-  };
-  
-  // If there are attached images, add the first one to the message
-  if (attachedImages.length > 0) {
-    newMessage.imageUrl = attachedImages[0];
-  }
-
-  setMessages(prev => [...prev, newMessage]);
-  setInput('');
-  setIsLoading(true);
-  setError(null);
-
-  try {
-    const response = await sendMessage(messageContent, threadId, mode, attachedImages, messages);
-    
-    // Set thread ID if returned
-    if (response.thread_id) {
-      setThreadId(response.thread_id);
+    // Create message content
+    let messageContent = input.trim();
+    if (!messageContent && attachedImages.length > 0) {
+      messageContent = "Here's an image for analysis"; // Default text if only image is attached
     }
     
-    // Detect which tools were used
-    const toolsUsed = response.tools_used.length > 0 
-      ? response.tools_used 
-      : detectToolsFromMessage(response.message);
-    
-    // Set active tools
-    if (toolsUsed.length > 0) {
-      setActiveTools(toolsUsed);
-      
-      // Remove tool indicators after delay
-      setTimeout(() => {
-        setActiveTools([]);
-      }, 5000);
-    }
-    
-    // If response message is empty, it means we've already handled it (like direct image generation)
-    if (response.message) {
-      // Check if the response contains any image URLs
-      const imageUrl = response.image_urls && response.image_urls.length > 0 
-        ? response.image_urls[0] 
-        : undefined;
-      
-      // Add assistant response
-      const assistantResponse = {
-        type: 'assistant',
-        content: response.message,
-        timestamp: response.timestamp || new Date().toLocaleTimeString(),
-        imageUrl: imageUrl // Include the image URL if available
-      };
-      
-      setMessages(prev => [...prev, assistantResponse]);
-
-      // If there's a source URL, add it
-      if (response.source_url) {
-        setMessages(prev => [...prev, {
-          type: 'tool',
-          content: `Source: ${response.source_url}`,
-          timestamp: new Date().toLocaleTimeString()
-        }]);
-      }
-    }
-    
-    // Clear attached images after sending
-    setAttachedImages([]);
-
-  } catch (error) {
-    setError(error instanceof Error ? error.message : 'An unexpected error occurred');
-    setMessages(prev => [...prev, {
-      type: 'error',
-      content: error instanceof Error ? error.message : 'An error occurred while processing your request.',
+    const newMessage: Message = {
+      type: 'user',
+      content: messageContent,
       timestamp: new Date().toLocaleTimeString()
-    }]);
-  } finally {
-    setIsLoading(false);
-  }
-};
+    };
+    
+    // If there are attached images, add the first one to the message
+    if (attachedImages.length > 0) {
+      newMessage.imageUrl = attachedImages[0];
+    }
+
+    setMessages(prev => [...prev, newMessage]);
+    setInput('');
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await sendMessage(messageContent, threadId, mode, attachedImages, messages);
+      
+      // Set thread ID if returned
+      if (response.thread_id) {
+        setThreadId(response.thread_id);
+      }
+      
+      // Detect which tools were used
+      const toolsUsed = response.tools_used.length > 0 
+        ? response.tools_used 
+        : detectToolsFromMessage(response.message);
+      
+      // Set active tools
+      if (toolsUsed.length > 0) {
+        setActiveTools(toolsUsed);
+        
+        // Remove tool indicators after delay
+        setTimeout(() => {
+          setActiveTools([]);
+        }, 5000);
+      }
+      
+      // If response message is empty, it means we've already handled it (like direct image generation)
+      if (response.message) {
+        // Check if the response contains any image URLs
+        const imageUrl = response.image_urls && response.image_urls.length > 0 
+          ? response.image_urls[0] 
+          : undefined;
+        
+        // Add assistant response
+        const assistantResponse = {
+          type: 'assistant',
+          content: response.message,
+          timestamp: response.timestamp || new Date().toLocaleTimeString(),
+          imageUrl: imageUrl // Include the image URL if available
+        };
+        
+        setMessages(prev => [...prev, assistantResponse]);
+
+        // If there's a source URL, add it
+        if (response.source_url) {
+          setMessages(prev => [...prev, {
+            type: 'tool',
+            content: `Source: ${response.source_url}`,
+            timestamp: new Date().toLocaleTimeString()
+          }]);
+        }
+      }
+      
+      // Clear attached images after sending
+      setAttachedImages([]);
+
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'An unexpected error occurred');
+      setMessages(prev => [...prev, {
+        type: 'error',
+        content: error instanceof Error ? error.message : 'An error occurred while processing your request.',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const clearConversation = () => {
     // Stop any active speech processes
@@ -443,11 +497,29 @@ const handleSubmit = async (e: React.FormEvent | React.KeyboardEvent) => {
 
   return (
     <div className={`flex flex-col h-screen ${isDark ? 'bg-[#0a0a14]' : 'bg-gray-300'}`}>
+      {/* Sidebar */}
+      <ConversationSidebar 
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        currentThreadId={threadId}
+        onThreadSelect={handleThreadSelect}
+        onNewConversation={startNewConversation}
+      />
+      
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div 
+          className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-20"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      
       {/* Header */}
       <ChatHeader 
         mode={mode}
         onModeChange={handleModeChange}
         onClearConversation={clearConversation}
+        onShowSidebar={() => setSidebarOpen(true)}
       />
 
       {/* Messages Area */}

@@ -1,6 +1,6 @@
-from typing import Dict, List, Optional, Any, Literal, Union
+from typing import Dict, Optional, Literal
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START, MessagesState, StateGraph, END
 from langgraph.prebuilt import ToolNode
@@ -10,9 +10,7 @@ from src.core.vector_store import VectorStore
 from src.core.workflow import RAGWorkflow
 from src.tools.image_tools import ImageTools
 import re
-import urllib.parse
 from urllib.parse import urlparse
-from collections import defaultdict
 
 # Create LangChain agent
 from langchain.agents import AgentExecutor, create_openai_tools_agent
@@ -294,8 +292,8 @@ class WebRAGSystem:
             return f"Error generating image: {str(e)}"
     
     def get_answer(self, query: str, thread_id: str = None, mode: str = "explore", 
-                  project_context: dict = None, image_context: str = None,
-                  attached_images: list = None) -> str:
+                project_context: dict = None, image_context: str = None,
+                attached_images: list = None) -> str:
         """
         Get answer from the RAG system for a user query.
         
@@ -400,24 +398,47 @@ class WebRAGSystem:
                             
                             return f"✅ Call initiated to {phone_number} with message: '{message}'. {result}"
             
-            # Get or create history for this thread
+            # Get or initialize in-memory conversation history for this thread
             if thread_id not in self.conversation_history:
                 self.conversation_history[thread_id] = []
             
-            # Get conversation history
-            messages = self.conversation_history[thread_id]
+            # For existing threads, retrieve full conversation history from the database
+            detailed_conversation_history = []
+            if thread_id:
+                try:
+                    import requests
+                    
+                    # Retrieve the full conversation history from the database via API
+                    response = requests.get(f"http://localhost:8000/api/conversations/{thread_id}")
+                    if response.status_code == 200:
+                        detailed_conversation_history = response.json().get("messages", [])
+                except Exception as e:
+                    print(f"Error retrieving thread history: {str(e)}")
+                    # Fall back to in-memory history if database retrieval fails
+            
+            # Use database history if available, otherwise use in-memory history
+            if detailed_conversation_history:
+                messages = []
+                for msg in detailed_conversation_history:
+                    if msg.get("role") == "user":
+                        messages.append(HumanMessage(content=msg.get("content", "")))
+                    elif msg.get("role") == "assistant":
+                        messages.append(AIMessage(content=msg.get("content", "")))
+            else:
+                # Use in-memory history as fallback
+                messages = self.conversation_history.get(thread_id, [])
             
             # Process messages to get conversation context
             conversation_history = RAGWorkflow.process_messages(messages)
             
-            # Get the latest message or create a new message object for the first message
+            # Get the latest message or create a new one for first message
             if messages:
                 latest_message = messages[-1]
             else:
                 # For the first message in a conversation, create a mock message with the current query
                 latest_message = HumanMessage(content=query)
 
-            # Create system prompt
+            # Create system prompt with full conversation history
             system_prompt = RAGWorkflow.create_system_prompt(
                 latest_message=latest_message,
                 conversation_history=conversation_history,
@@ -434,6 +455,9 @@ class WebRAGSystem:
             system_prompt += "\n3. List all 5 sources with proper links at the end of your response"
             system_prompt += "\n4. Prefer recent sources when available"
             system_prompt += "\n5. Present information in a factual, balanced way, highlighting agreements and differences between sources"
+            
+            # Add memory context reminder
+            system_prompt += "\n\nIMPORTANT: You have access to the full conversation history. Reference previous parts of the conversation when relevant and maintain continuity by referring to previous questions and answers."
             
             # Augment system prompt with project context if available
             if project_context:
@@ -484,10 +508,19 @@ class WebRAGSystem:
                 return_intermediate_steps=True  # Add for better debugging
             )
             
+            # Prepare chat history for the agent
+            # Use FULL history from database or in-memory
+            chat_history = []
+            for message in messages:
+                if isinstance(message, HumanMessage):
+                    chat_history.append({"role": "user", "content": message.content})
+                elif isinstance(message, AIMessage):
+                    chat_history.append({"role": "assistant", "content": message.content})
+            
             # Run agent to get response
             response = agent_executor.invoke({
                 "input": query,
-                "chat_history": messages
+                "chat_history": chat_history
             })
             
             # Get output and intermediate steps for debugging if needed

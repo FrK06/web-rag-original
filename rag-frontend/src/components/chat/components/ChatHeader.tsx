@@ -1,6 +1,6 @@
 // // src/components/chat/components/ChatHeader.tsx
 import React from 'react';
-import { Zap, Trash2, Moon, Sun } from 'lucide-react';
+import { Zap, Trash2, Moon, Sun, Menu } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 import ModeDropdown from './ModeDropdown';
 
@@ -8,12 +8,14 @@ interface ChatHeaderProps {
   mode: string;
   onModeChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
   onClearConversation: () => void;
+  onShowSidebar: () => void; // Add this prop
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
   mode,
   onModeChange,
-  onClearConversation
+  onClearConversation,
+  onShowSidebar
 }) => {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
@@ -22,6 +24,14 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
     <div className={`${isDark ? 'bg-[#0a0a14]' : 'bg-gray-200'} px-6 py-4 z-10`}>
       <div className="max-w-5xl mx-auto flex justify-between items-center">
         <div className="flex items-center gap-3">
+          {/* Add sidebar toggle button */}
+          <button 
+            onClick={onShowSidebar}
+            className={`p-2 rounded-full ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-600'} transition-colors mr-2`}
+            title="Show conversations"
+          >
+            <Menu size={18} />
+          </button>
           {isDark ? (
             <>
               <div className="w-10 h-10 rounded-full flex items-center justify-center tech-gradient futuristic-glow">

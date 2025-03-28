@@ -2,15 +2,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
-# import asyncio
-# import aiomongo
 import os
 import datetime
 import uuid
-# import json
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient
-
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +42,9 @@ class ConversationUpdate(BaseModel):
     thread_id: str
     assistant_message: str
     metadata: Dict[str, Any] = {}
+
+class ConversationRenameRequest(BaseModel):
+    name: str
 
 @app.on_event("startup")
 async def startup_event():
@@ -118,7 +117,8 @@ async def store_message(request: ConversationRequest):
                 "thread_id": thread_id,
                 "messages": history,
                 "created_at": datetime.datetime.utcnow(),
-                "last_updated": datetime.datetime.utcnow()
+                "last_updated": datetime.datetime.utcnow(),
+                "title": request.message[:50]  # Use first message as initial title
             })
         
         return {
@@ -213,6 +213,74 @@ async def delete_conversation(thread_id: str):
     except Exception as e:
         logger.error(f"Error deleting conversation: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting conversation: {str(e)}")
+    
+@app.get("/threads")
+async def list_threads(limit: int = 20, skip: int = 0):
+    """Get a list of conversation threads with preview information"""
+    try:
+        # Find all conversations, sorted by last_updated (newest first)
+        cursor = conversations.find(
+            {},
+            {"thread_id": 1, "last_updated": 1, "messages": {"$slice": -1}, "title": 1}  # Get only the last message and title
+        ).sort("last_updated", -1).skip(skip).limit(limit)
+        
+        threads = []
+        async for doc in cursor:
+            # Extract preview info - prefer custom title if available
+            title = doc.get("title", "")
+            
+            # If no title or fallback to last message
+            if not title:
+                last_message = doc.get("messages", [{}])[0] if doc.get("messages") else {}
+                title = last_message.get("content", "")
+                if len(title) > 60:
+                    title = title[:57] + "..."
+                
+            threads.append({
+                "thread_id": doc.get("thread_id"),
+                "last_updated": doc.get("last_updated").isoformat() if doc.get("last_updated") else "",
+                "preview": title
+            })
+            
+        return {
+            "threads": threads,
+            "count": len(threads),
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing threads: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error listing threads: {str(e)}")
+
+# New endpoint for renaming conversations
+@app.put("/rename/{thread_id}")
+async def rename_conversation(thread_id: str, request: ConversationRenameRequest):
+    """Rename a conversation thread"""
+    try:
+        # Validate that the name is not empty
+        if not request.name.strip():
+            raise HTTPException(status_code=400, detail="Conversation name cannot be empty")
+            
+        # Update the conversation title
+        result = await conversations.update_one(
+            {"thread_id": thread_id},
+            {"$set": {"title": request.name, "last_updated": datetime.datetime.utcnow()}}
+        )
+        
+        if result.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Thread not found")
+            
+        return {
+            "thread_id": thread_id,
+            "name": request.name,
+            "status": "renamed"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error renaming conversation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error renaming conversation: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

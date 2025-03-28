@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any
 import aiohttp
 import redis.asyncio as redis
 import os
@@ -11,7 +11,6 @@ from datetime import datetime
 import httpx
 import re
 import uuid
-import asyncio
 from urllib.parse import urlparse
 import hashlib
 
@@ -169,9 +168,22 @@ def create_system_prompt(
     mode: str,
     conversation_history: List[Dict[str, Any]],
     image_context: Optional[str] = None,
-    project_context: Optional[Dict[str, Any]] = None
+    project_context: Optional[Dict[str, Any]] = None,
+    thread_id: Optional[str] = None
 ) -> str:
-    """Create a system prompt for the LLM"""
+    """Create a comprehensive system prompt for the LLM with enhanced memory support
+    
+    Args:
+        query: The current user query
+        mode: The conversation mode (explore or setup)
+        conversation_history: The full conversation history
+        image_context: Optional context from analyzed images
+        project_context: Optional project-specific context
+        thread_id: Optional thread identifier for conversation tracking
+        
+    Returns:
+        A formatted system prompt with full context
+    """
     # Base system prompt
     base_prompt = """You are a helpful assistant that can search the web, extract information from websites, communicate via SMS/phone calls, and work with images.
 
@@ -185,11 +197,18 @@ When asked about recent events, news, or releases:
 3. Only provide information from what you find in the actual search results
 4. If you can't find current information, say "I need to search for the most up-to-date information about this" and then search again
 5. Never reference old information or make assumptions about dates
-6. Always include the source and date of the information you found"""
+6. Always include the source and date of the information you found
+
+Conversation thread ID: {thread_id}
+"""
 
     current_date = datetime.now().strftime("%B %d, %Y")
     current_day = datetime.now().strftime("%A")
-    base_prompt = base_prompt.format(current_date=current_date, current_day_of_week=current_day)
+    base_prompt = base_prompt.format(
+        current_date=current_date, 
+        current_day_of_week=current_day,
+        thread_id=thread_id if thread_id else 'New conversation'
+    )
     
     # Add image-specific instructions if image context is provided
     if image_context:
@@ -204,6 +223,44 @@ When working with images:
 Image Context:
 {image_context}"""
         base_prompt += image_prompt.format(image_context=image_context)
+
+    # Add tool usage guidance
+    tools_prompt = """
+For questions about:
+- Recent AI/LLM releases: specifically search AI news websites and include "2025" in the search
+- Current events: always include the current month and year in the search
+- Technology updates: specifically look for news from this week or this month
+- When users request notifications, use send_sms or make_call to follow up.
+- When users want to hear information, use speak_text to convert your response to audio
+- When users want images created, use generate_image to create visuals based on descriptions"""
+    base_prompt += tools_prompt
+
+    # Add memory-specific instructions to improve context retention
+    memory_prompt = """
+IMPORTANT MEMORY INSTRUCTIONS:
+You have access to the FULL conversation history between you and the user.
+When responding, always:
+1. Reference and acknowledge previous parts of the conversation when appropriate
+2. Maintain continuity by connecting to earlier topics and questions
+3. Use the user's previously stated preferences or concerns in your responses
+4. Show that you remember details the user has shared before
+5. Don't act surprised by information that was previously discussed
+6. If the user previously shared images, remember what they showed and refer back to them if relevant
+7. Keep track of what visual information you've already seen and analyzed
+"""
+    base_prompt += memory_prompt
+
+    # Add multimodal context handling
+    multimodal_context = """
+In this conversation, you may encounter:
+- Text messages
+- Images shared by the user
+- Voice transcripts
+- Results from web searches
+
+Maintain a coherent thread across all these modalities.
+"""
+    base_prompt += multimodal_context
 
     # Add mode-specific instructions
     if mode == "explore":
@@ -228,6 +285,52 @@ Project Context:
             project_prompt += f"{key}: {value}\n"
         base_prompt += project_prompt
 
+    # Add conversation context with formatted history
+    context_prompt = f"""
+Current question: {query}
+
+IMPORTANT - Previous conversation history:
+You must use this conversation history to maintain context when replying.
+Reference prior exchanges when answering and maintain continuity of thought.
+"""
+    
+    # Add a better-formatted conversation history with clear delineation
+    if conversation_history and len(conversation_history) > 0:
+        # Format the conversation history for readability
+        formatted_history = []
+        for msg in conversation_history:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            
+            if isinstance(content, list):
+                # Handle multimodal content
+                text_parts = []
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        text_parts.append(item.get("text", ""))
+                content = " ".join(text_parts)
+            
+            # Format based on role
+            if role == "user":
+                formatted_history.append(f"Human: {content}")
+            elif role == "assistant":
+                formatted_history.append(f"Assistant: {content}")
+            elif role == "system":
+                formatted_history.append(f"System: {content}")
+            else:
+                formatted_history.append(f"{role.capitalize()}: {content}")
+        
+        context_prompt += "\n--- CONVERSATION HISTORY START ---\n"
+        context_prompt += "\n".join(formatted_history)
+        context_prompt += "\n--- CONVERSATION HISTORY END ---\n"
+        
+        # Add explicit reminder to use the history
+        context_prompt += "\nRemember to reference and build upon this conversation history in your response."
+    else:
+        context_prompt += "\nThis is the start of a new conversation."
+    
+    base_prompt += context_prompt
+
     # Add explicit message structure instructions
     message_prompt = """
 IMPORTANT FORMATTING INSTRUCTIONS:
@@ -242,28 +345,35 @@ IMPORTANT FORMATTING INSTRUCTIONS:
    | Data1   | Data2   | Data3   |
 
 3. Format code blocks with language-specific syntax highlighting.
-
-Current question: {query}"""
-    base_prompt += message_prompt.format(query=query)
+"""
+    base_prompt += message_prompt
 
     return base_prompt
 
 def format_conversation_history(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Format conversation history for the LLM"""
+    """Format conversation history for the LLM with full context preservation"""
     formatted_history = []
     
+    # Process all messages in history - don't limit to a specific number
     for message in history:
         role = message.get("role", "")
+        content = message.get("content", "")
+        
+        # Skip empty messages
+        if not content:
+            continue
+            
         if role == "user":
             formatted_history.append({
                 "role": "user",
-                "content": message.get("content", "")
+                "content": content
             })
         elif role == "assistant":
             formatted_history.append({
                 "role": "assistant",
-                "content": message.get("content", "")
+                "content": content
             })
+        # Could add handling for system/tool messages if needed
     
     return formatted_history
 
@@ -644,7 +754,7 @@ async def process_query(request: ProcessRequest):
             # Continue with regular processing if direct handling fails
     
     try:
-        # Create system prompt
+        # Create system prompt with full conversation history
         system_prompt = create_system_prompt(
             query=request.query,
             mode=request.mode,
@@ -653,7 +763,7 @@ async def process_query(request: ProcessRequest):
             project_context=request.project_context
         )
         
-        # Format conversation history
+        # Format full conversation history - don't truncate it
         formatted_history = format_conversation_history(request.conversation_history)
         
         # Prepare messages for OpenAI API
@@ -661,9 +771,9 @@ async def process_query(request: ProcessRequest):
             {"role": "system", "content": system_prompt}
         ]
         
-        # Add conversation history (last 10 messages maximum)
+        # Add all conversation history - don't limit to last 10 messages
         if formatted_history:
-            messages.extend(formatted_history[-10:])
+            messages.extend(formatted_history)
         
         # Add current user query
         user_content = []

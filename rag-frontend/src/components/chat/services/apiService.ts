@@ -46,16 +46,22 @@ export const sendMessage = async (
     // Continue with normal message processing for non-image requests
     console.log('Sending message:', content);
     console.log('Attached images:', attachedImages);
+    console.log('Thread ID:', threadId);
+    
+    // Convert messages to a format that the backend can use
+    const formattedMessages = messages.map(msg => ({
+      role: msg.type === 'user' ? 'user' : 'assistant',
+      content: msg.content,
+      timestamp: msg.timestamp
+    }));
     
     const response = await axios.post('http://localhost:8000/api/chat/', {
       content,
       thread_id: threadId,
       mode,
       attached_images: attachedImages,
-      conversation_history: messages.map(msg => ({
-        type: msg.type,
-        content: msg.content
-      }))
+      // Include the full message history for context
+      conversation_history: formattedMessages
     });
 
     console.log('Response from server:', response.data);
@@ -195,5 +201,86 @@ export const processImage = async (imageData: string, operation: string): Promis
   } catch (error) {
     console.error('Error processing image:', error);
     throw error;
+  }
+};
+
+// Add these interfaces
+interface ThreadPreview {
+  thread_id: string;
+  preview: string;
+  last_updated: string;
+}
+
+interface ConversationsResponse {
+  threads: ThreadPreview[];
+  count: number;
+  status: string;
+}
+
+interface ThreadHistoryResponse {
+  thread_id: string;
+  messages: {
+    role: string;
+    content: string;
+    timestamp: string;
+    metadata?: {
+      imageUrl?: string;
+      tools_used?: string[];
+    };
+  }[];
+  count: number;
+}
+
+/**
+ * Fetches a list of all conversation threads
+ */
+export const getConversations = async (): Promise<ConversationsResponse> => {
+  try {
+    const response = await axios.get<ConversationsResponse>('http://localhost:8000/api/conversations/');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    throw new Error('Failed to fetch conversations');
+  }
+};
+
+/**
+ * Fetches the full conversation history for a specific thread
+ */
+export const getConversationHistory = async (threadId: string): Promise<ThreadHistoryResponse> => {
+  try {
+    const response = await axios.get<ThreadHistoryResponse>(`http://localhost:8000/api/conversations/${threadId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching conversation history:', error);
+    throw new Error('Failed to fetch conversation history');
+  }
+};
+
+/**
+ * Deletes a conversation thread
+ */
+export const deleteConversation = async (threadId: string): Promise<{status: string}> => {
+  try {
+    const response = await axios.delete(`http://localhost:8000/api/conversations/${threadId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting conversation:', error);
+    throw new Error('Failed to delete conversation');
+  }
+};
+
+/**
+ * Renames a conversation thread
+ */
+export const renameConversation = async (threadId: string, newName: string): Promise<{status: string}> => {
+  try {
+    const response = await axios.put(`http://localhost:8000/api/conversations/${threadId}/rename`, {
+      name: newName
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error renaming conversation:', error);
+    throw new Error('Failed to rename conversation');
   }
 };
