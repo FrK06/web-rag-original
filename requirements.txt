@@ -1,17 +1,21 @@
-selenium
-langchain
-langchain-openai
-openai
-faiss-cpu
-python-dotenv
-langgraph
-langchain-community
-langchain-core
-webdriver-manager
-annoy
-twilio
-fastapi
-uvicorn
-python-multipart
-Pillow
-requests
+# Development and deployment dependencies
+python-dotenv>=1.0.0
+docker-compose>=2.15.0
+httpx>=0.25.0
+
+# API testing and documentation
+pytest>=7.3.1
+pytest-asyncio>=0.21.0
+requests>=2.31.0
+
+# Microservices monitoring (optional)
+prometheus-client>=0.16.0
+grafana-client>=2.2.0
+
+# Utility tools
+black>=23.3.0    # Code formatting
+flake8>=6.0.0    # Linting
+isort>=5.12.0    # Import sorting
+
+# Note: Each microservice has its own requirements.txt file
+# with specific dependencies needed for that service
