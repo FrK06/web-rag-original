@@ -1,9 +1,8 @@
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any
 import aiohttp
-import asyncio
 import redis.asyncio as redis
 import os
 import json
@@ -12,7 +11,6 @@ import base64
 import io
 from datetime import datetime
 import uuid
-import httpx
 from PIL import Image, ImageOps
 
 # Setup logging

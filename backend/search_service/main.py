@@ -9,7 +9,7 @@ import os
 import json
 import logging
 from urllib.parse import urlparse
-from datetime import datetime, timedelta
+from datetime import datetime
 import hashlib
 
 # Setup logging

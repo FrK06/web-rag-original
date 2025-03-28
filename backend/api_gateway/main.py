@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
-import json
+from fastapi.responses import JSONResponse
 import logging
 import time
 import uuid
@@ -31,6 +31,7 @@ SERVICE_MAP = {
     "multimedia": os.getenv("MULTIMEDIA_SERVICE_URL", "http://multimedia-service:8003"),
     "notification": os.getenv("NOTIFICATION_SERVICE_URL", "http://notification-service:8004"),
     "llm": os.getenv("LLM_SERVICE_URL", "http://llm-service:8005"),
+    "auth": os.getenv("AUTH_SERVICE_URL", "http://auth-service:8006"),
 }
 
 # Timeout settings
@@ -346,6 +347,137 @@ async def rename_conversation_endpoint(thread_id: str, request: ConversationRena
             status_code=response.status_code,
             media_type=response.headers.get("content-type", "application/json")
         )
+    
+# Authentication routes
+@app.post("/api/auth/register")
+async def auth_register(request: Request):
+    """Forward registration requests to auth service"""
+    data = await request.json()
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        response = await client.post(
+            f"{SERVICE_MAP['auth']}/register",
+            json=data
+        )
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type", "application/json")
+        )
+
+@app.post("/api/auth/login")
+async def auth_login(request: Request):
+    """Forward login requests to auth service"""
+    data = await request.json()
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        response = await client.post(
+            f"{SERVICE_MAP['auth']}/login",
+            json=data
+        )
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type", "application/json")
+        )
+
+@app.post("/api/auth/refresh")
+async def auth_refresh(request: Request):
+    """Forward token refresh requests to auth service"""
+    data = await request.json()
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        response = await client.post(
+            f"{SERVICE_MAP['auth']}/refresh",
+            json=data
+        )
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type", "application/json")
+        )
+
+@app.post("/api/auth/logout")
+async def auth_logout(request: Request):
+    """Forward logout requests to auth service"""
+    data = await request.json()
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        response = await client.post(
+            f"{SERVICE_MAP['auth']}/logout",
+            json=data
+        )
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type", "application/json")
+        )
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request):
+    """Forward user info requests to auth service"""
+    # Extract token from header
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+    
+    # Prepare headers with token
+    headers = {"Authorization": auth_header}
+    
+    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+        response = await client.get(
+            f"{SERVICE_MAP['auth']}/me",
+            headers=headers
+        )
+        
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            media_type=response.headers.get("content-type", "application/json")
+        )
+
+# Add middleware to validate JWT for protected routes
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    # Skip auth for non-protected routes
+    if request.url.path.startswith("/api/auth/") or request.url.path == "/api/health":
+        return await call_next(request)
+    
+    # Check for auth header
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header or not auth_header.startswith("Bearer "):
+        # If it's OPTIONS request (preflight), let it pass
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing or invalid authorization header"}
+        )
+    
+    # Validate token with auth service
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{SERVICE_MAP['auth']}/me",
+                headers={"Authorization": auth_header}
+            )
+            
+            if response.status_code != 200:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or expired token"}
+                )
+    except Exception as e:
+        logger.error(f"Error validating token: {str(e)}")
+        # Continue if auth service is unreachable
+        # This prevents complete system lockout if auth service is down
+        # In production, you might want to enforce stricter validation
+    
+    # Continue with the request
+    return await call_next(request)
 
 if __name__ == "__main__":
     import uvicorn

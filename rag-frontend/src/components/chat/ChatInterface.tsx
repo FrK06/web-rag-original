@@ -20,7 +20,11 @@ import ChatInput from './components/ChatInput';
 import ImageModal from './components/ImageModal';
 import ConversationSidebar from './components/ConversationSidebar';
 
-const ChatInterface: React.FC = () => {
+interface ChatInterfaceProps {
+  userName?: string;
+}
+
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ userName }) => {
   // Theme state
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -519,6 +523,7 @@ const ChatInterface: React.FC = () => {
         mode={mode}
         onModeChange={handleModeChange}
         onShowSidebar={() => setSidebarOpen(true)}
+        userName={userName}
       />
 
       {/* Messages Area */}

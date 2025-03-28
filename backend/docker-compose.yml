@@ -11,6 +11,7 @@ services:
       - MULTIMEDIA_SERVICE_URL=http://multimedia-service:8003
       - NOTIFICATION_SERVICE_URL=http://notification-service:8004
       - LLM_SERVICE_URL=http://llm-service:8005
+      - AUTH_SERVICE_URL=http://auth-service:8006
     restart: always
     depends_on:
       - conversation-service
@@ -18,6 +19,7 @@ services:
       - multimedia-service
       - notification-service
       - llm-service
+      - auth-service
     networks:
       - rag-network
     healthcheck:
@@ -151,6 +153,28 @@ services:
       - rag-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  auth-service:
+    build:
+      context: ./auth_service
+      dockerfile: Dockerfile
+    ports:
+      - "8006:8006"
+    environment:
+      - MONGO_URI=mongodb://mongo-user:${MONGO_PASSWORD}@mongodb:27017/ragassistant?authSource=admin
+      - MONGO_DB=ragassistant
+      - JWT_SECRET=${JWT_SECRET}
+    restart: always
+    depends_on:
+      - mongodb
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
       interval: 30s
       timeout: 10s
       retries: 3
