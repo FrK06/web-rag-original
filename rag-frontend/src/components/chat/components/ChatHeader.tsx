@@ -7,14 +7,12 @@ import ModeDropdown from './ModeDropdown';
 interface ChatHeaderProps {
   mode: string;
   onModeChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-  onClearConversation: () => void;
   onShowSidebar: () => void; // Add this prop
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
   mode,
   onModeChange,
-  onClearConversation,
   onShowSidebar
 }) => {
   const { theme, toggleTheme } = useTheme();
@@ -67,14 +65,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             title={isDark ? "Switch to light mode" : "Switch to dark mode"}
           >
             {isDark ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-          
-          <button 
-            onClick={onClearConversation} 
-            className={`p-2 rounded-full ${isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-600'} transition-colors`}
-            title="Clear conversation"
-          >
-            <Trash2 size={18} />
           </button>
         </div>
       </div>
