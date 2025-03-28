@@ -1,4 +1,4 @@
-// // src/components/chat/components/MessagesContainer.tsx
+// src/components/chat/components/MessagesContainer.tsx
 import React, { useRef, useEffect } from 'react';
 import { Message } from '../types';
 import MessageItem from './MessageItem';
@@ -39,7 +39,7 @@ const MessagesContainer: React.FC<MessagesContainerProps> = ({
         scrollbarWidth: 'thin'
       }}
     >
-      <div className="max-w-5xl mx-auto space-y-5">
+      <div className="max-w-5xl mx-auto space-y-5 overflow-hidden">
         {messages.length === 0 ? (
           <WelcomeScreen />
         ) : (

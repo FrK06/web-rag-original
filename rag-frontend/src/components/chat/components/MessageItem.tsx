@@ -1,11 +1,37 @@
-// // src/components/chat/components/MessageItem.tsx
+// src/components/chat/components/MessageItem.tsx
 import React from 'react';
 import { VolumeX, Volume2, Search } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vs, vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { Message } from '../types';
 import { messageStyles } from '../utils/messageStyles';
 import { formatMarkdown } from '../utils/markdownFormatter';
 import { useTheme } from '@/components/ThemeProvider';
+
+// Import languages you want to use
+import jsx from 'react-syntax-highlighter/dist/cjs/languages/prism/jsx';
+import javascript from 'react-syntax-highlighter/dist/cjs/languages/prism/javascript';
+import typescript from 'react-syntax-highlighter/dist/cjs/languages/prism/typescript';
+import python from 'react-syntax-highlighter/dist/cjs/languages/prism/python';
+import css from 'react-syntax-highlighter/dist/cjs/languages/prism/css';
+import bash from 'react-syntax-highlighter/dist/cjs/languages/prism/bash';
+import json from 'react-syntax-highlighter/dist/cjs/languages/prism/json';
+import markdown from 'react-syntax-highlighter/dist/cjs/languages/prism/markdown';
+import sql from 'react-syntax-highlighter/dist/cjs/languages/prism/sql';
+import java from 'react-syntax-highlighter/dist/cjs/languages/prism/java';
+
+// Register language support
+SyntaxHighlighter.registerLanguage('jsx', jsx);
+SyntaxHighlighter.registerLanguage('javascript', javascript);
+SyntaxHighlighter.registerLanguage('typescript', typescript);
+SyntaxHighlighter.registerLanguage('python', python);
+SyntaxHighlighter.registerLanguage('css', css);
+SyntaxHighlighter.registerLanguage('bash', bash);
+SyntaxHighlighter.registerLanguage('json', json);
+SyntaxHighlighter.registerLanguage('markdown', markdown);
+SyntaxHighlighter.registerLanguage('sql', sql);
+SyntaxHighlighter.registerLanguage('java', java);
 
 interface MessageItemProps {
   message: Message;
@@ -16,6 +42,15 @@ interface MessageItemProps {
   onPlayAudio: (text: string, messageIndex: number) => Promise<void>;
   onStopAudio: () => void;
   onOpenImageModal: (imageUrl: string) => void;
+}
+
+// Type for ReactMarkdown code component props
+interface CodeProps {
+  node?: any;
+  inline?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+  [key: string]: any;
 }
 
 const MessageItem: React.FC<MessageItemProps> = ({
@@ -32,12 +67,15 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const isDark = theme === 'dark';
   const isAssistant = message.type === 'assistant';
   
+  // Use appropriate syntax highlighting theme based on the current theme
+  const codeStyle = isDark ? vscDarkPlus : vs;
+  
   return (
     <div
-      className={`p-5 rounded-xl border ${message.type === 'user' ? 'ml-12' : 'mr-12'} ${messageStyles[message.type as keyof typeof messageStyles]} ${isDark ? '' : ''} transition-all ${isDark ? 'hover:shadow-md hover:shadow-black/20' : 'hover:shadow-md'}`}
+      className={`p-5 rounded-xl border message-container ${message.type === 'user' ? 'ml-12' : 'mr-12'} ${messageStyles[message.type as keyof typeof messageStyles]} ${isDark ? '' : ''} transition-all ${isDark ? 'hover:shadow-md hover:shadow-black/20' : 'hover:shadow-md'}`}
     >
       <div className="flex items-start gap-2">
-        <div className="flex-1">
+        <div className="flex-1 overflow-hidden">
           <div className="flex justify-between items-center mb-2">
             <p className={`text-sm font-semibold uppercase tracking-wider ${
               isDark
@@ -134,38 +172,63 @@ const MessageItem: React.FC<MessageItemProps> = ({
                       style={{cursor: 'pointer', maxHeight: '400px'}}
                     />
                   ),
-                  pre: (props) => (
-                    <pre className={`rounded-md p-3 overflow-auto ${
-                      isDark ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {props.children}
-                    </pre>
-                  ),
-                  code: (props) => {
-                    // @ts-ignore - TypeScript doesn't recognize inline prop
-                    const isInline = props.inline;
+                  code: ({ node, inline, className, children, ...props }: CodeProps) => {
+                    const match = /language-(\w+)/.exec(className || '');
+                    const lang = match ? match[1] : '';
                     
-                    if (isInline) {
+                    if (!inline) {
                       return (
-                        <code className={`px-1 py-0.5 rounded-md ${
-                          isDark ? 'bg-gray-900 text-gray-300' : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {props.children}
-                        </code>
+                        <div className="max-w-full overflow-hidden rounded-md code-block-container">
+                          {lang && (
+                            <div className={`code-language-indicator px-3 py-1 text-xs font-mono text-right ${
+                              isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-700'
+                            }`}>
+                              {lang}
+                            </div>
+                          )}
+                          <SyntaxHighlighter
+                            language={lang || 'text'}
+                            style={codeStyle}
+                            customStyle={{
+                              margin: 0,
+                              borderRadius: lang ? '0 0 0.375rem 0.375rem' : '0.375rem',
+                              fontSize: '0.9rem',
+                            }}
+                            showLineNumbers={true}
+                            {...props}
+                          >
+                            {String(children).replace(/\n$/, '')}
+                          </SyntaxHighlighter>
+                        </div>
                       );
                     }
+                    
                     return (
-                      <code className={props.className}>
-                        {props.children}
+                      <code 
+                        className={`px-1 py-0.5 rounded-md ${
+                          isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-800'
+                        }`}
+                        {...props}
+                      >
+                        {children}
                       </code>
                     );
-                  }
+                  },
+                  pre: ({ children }) => <>{children}</>,
+                  // Add proper table handling
+                  table: (props) => (
+                    <div className="overflow-x-auto">
+                      <table>
+                        {props.children}
+                      </table>
+                    </div>
+                  )
                 }}
               >
                 {formatMarkdown(message.content, messages)}
               </ReactMarkdown>
             ) : (
-              <p>{message.content}</p>
+              <p className="break-words">{message.content}</p>
             )}
           </div>
           <p className="text-xs text-gray-500 mt-3">{message.timestamp}</p>
