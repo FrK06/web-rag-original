@@ -518,7 +518,6 @@ const ChatInterface: React.FC = () => {
       <ChatHeader 
         mode={mode}
         onModeChange={handleModeChange}
-        onClearConversation={clearConversation}
         onShowSidebar={() => setSidebarOpen(true)}
       />
 
