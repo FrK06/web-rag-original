@@ -157,6 +157,7 @@ export const getCurrentUser = async (): Promise<User> => {
   }
 };
 
+// refreshToken function
 export const refreshToken = async (): Promise<void> => {
   const refreshToken = localStorage.getItem('refresh_token');
   if (!refreshToken) {
@@ -164,17 +165,41 @@ export const refreshToken = async (): Promise<void> => {
   }
   
   try {
+    console.log("Attempting to refresh token");
     const response = await axios.post(`${API_URL}/api/auth/refresh`, {
-      refresh_token: refreshToken
+      refresh_token: refreshToken  // Make sure this key matches what the backend expects
     });
     
-    localStorage.setItem('auth_token', response.data.token || response.data.access_token);
-    if (response.data.refreshToken || response.data.refresh_token) {
-      localStorage.setItem('refresh_token', response.data.refreshToken || response.data.refresh_token);
+    console.log("Token refresh response:", response.status);
+    
+    // Check all possible response fields
+    const accessToken = response.data.access_token || 
+                       response.data.token || 
+                       "";
+                       
+    const newRefreshToken = response.data.refresh_token || 
+                           response.data.refreshToken || 
+                           refreshToken;  // Use old token if new one not provided
+    
+    if (accessToken) {
+      localStorage.setItem('auth_token', accessToken);
+      console.log("Access token updated");
+    }
+    
+    if (newRefreshToken !== refreshToken) {
+      localStorage.setItem('refresh_token', newRefreshToken);
+      console.log("Refresh token updated");
     }
   } catch (error) {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('refresh_token');
+    console.error("Token refresh failed:", error);
+    
+    // Only clear tokens on certain errors
+    if (axios.isAxiosError(error) && error.response && 
+        (error.response.status === 401 || error.response.status === 403)) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('refresh_token');
+    }
+    
     throw error;
   }
 };

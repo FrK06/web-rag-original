@@ -99,29 +99,36 @@ async def health_check():
 
 # Chat endpoint to handle messages
 @app.post("/api/chat/")
-async def forward_chat_message(request: Request):
-    """Forward chat messages to the conversation service and then to LLM service"""
+async def chat_endpoint(request: Request):
+    """Main chat endpoint that orchestrates services"""
     try:
         data = await request.json()
         
-        # First, store the message in conversation service
+        # First store the message in conversation
+        conversation_data = {
+            "thread_id": data.get("thread_id"),
+            "message": data.get("content", ""),
+            "conversation_history": data.get("conversation_history", [])
+        }
+        
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-            # Store the message
+            # Store message
             conversation_response = await client.post(
                 f"{SERVICE_MAP['conversation']}/store",
-                json=data
+                json=conversation_data
             )
             
             if conversation_response.status_code != 200:
+                logger.error(f"Conversation service error: {conversation_response.text}")
                 return JSONResponse(
                     status_code=conversation_response.status_code,
                     content=conversation_response.json()
                 )
             
             conversation_result = conversation_response.json()
-            
-            # Now process with LLM service
             thread_id = conversation_result.get("thread_id")
+            
+            # Process with LLM
             llm_data = {
                 "query": data.get("content", ""),
                 "thread_id": thread_id,
@@ -137,15 +144,15 @@ async def forward_chat_message(request: Request):
             )
             
             if llm_response.status_code != 200:
+                logger.error(f"LLM service error: {llm_response.text}")
                 return JSONResponse(
                     status_code=llm_response.status_code,
                     content=llm_response.json()
                 )
             
-            # Get LLM result
             result = llm_response.json()
             
-            # Store the assistant's response
+            # Store assistant response
             await client.post(
                 f"{SERVICE_MAP['conversation']}/update",
                 json={
@@ -158,17 +165,13 @@ async def forward_chat_message(request: Request):
                 }
             )
             
-            # Return result to client
-            return JSONResponse(
-                status_code=200,
-                content=result
-            )
+            return JSONResponse(content=result)
             
     except Exception as e:
-        logger.error(f"Error handling chat: {str(e)}")
+        logger.error(f"Error in chat endpoint: {str(e)}")
         return JSONResponse(
             status_code=500,
-            content={"message": "Error processing chat request", "error": str(e)}
+            content={"message": "Error processing message", "error": str(e)}
         )
 
 @app.post("/api/speech-to-text/")
@@ -412,27 +415,35 @@ async def auth_login(request: Request):
             content={"detail": "Error processing authentication request"}
         )
 
+# Fix for token refresh issue
 @app.post("/api/auth/refresh")
 async def auth_refresh(request: Request):
     """Forward token refresh requests to auth service"""
     try:
         data = await request.json()
+        
+        # Format the data correctly - use refresh_token as the key
+        refresh_data = {
+            "refresh_token": data.get("refresh_token", "")
+        }
+        
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             response = await client.post(
                 f"{SERVICE_MAP['auth']}/refresh",
-                json=data
+                json=refresh_data
             )
             
+            # Return the response directly
             return Response(
                 content=response.content,
                 status_code=response.status_code,
                 media_type=response.headers.get("content-type", "application/json")
             )
     except Exception as e:
-        logger.error(f"Auth refresh error: {str(e)}")
+        logger.error(f"Error in token refresh: {str(e)}")
         return JSONResponse(
             status_code=500,
-            content={"detail": "Error processing token refresh"}
+            content={"message": "Error refreshing token", "error": str(e)}
         )
 
 @app.post("/api/auth/logout")
