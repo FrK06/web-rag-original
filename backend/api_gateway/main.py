@@ -7,7 +7,7 @@ import logging
 import time
 import uuid
 from pydantic import BaseModel
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -97,67 +97,55 @@ async def health_check():
         "version": "1.0.0",
     }
 
+# Chat endpoint to handle messages
 @app.post("/api/chat/")
-async def chat_endpoint(message: ChatMessage):
-    """Main chat endpoint that orchestrates services"""
-    request_id = str(uuid.uuid4())
-    logger.info(f"Processing chat request {request_id}")
-    
+async def forward_chat_message(request: Request):
+    """Forward chat messages to the conversation service and then to LLM service"""
     try:
-        # 1. Store/retrieve conversation context
-        conversation_data = {
-            "thread_id": message.thread_id,
-            "message": message.content,
-            "conversation_history": message.conversation_history
-        }
+        data = await request.json()
         
+        # First, store the message in conversation service
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-            conversation_resp = await client.post(
+            # Store the message
+            conversation_response = await client.post(
                 f"{SERVICE_MAP['conversation']}/store",
-                json=conversation_data
+                json=data
             )
             
-            if conversation_resp.status_code != 200:
-                logger.error(f"Conversation service error: {conversation_resp.text}")
-                raise HTTPException(status_code=500, detail="Error processing conversation")
-                
-            conversation_result = conversation_resp.json()
-            thread_id = conversation_result["thread_id"]
-            
-            # 2. Process multimedia if present
-            image_context = None
-            if message.attached_images:
-                multimedia_resp = await client.post(
-                    f"{SERVICE_MAP['multimedia']}/analyze_batch",
-                    json={"images": message.attached_images}
+            if conversation_response.status_code != 200:
+                return JSONResponse(
+                    status_code=conversation_response.status_code,
+                    content=conversation_response.json()
                 )
-                
-                if multimedia_resp.status_code == 200:
-                    image_context = multimedia_resp.json().get("analysis")
             
-            # 3. Send to LLM service for processing
+            conversation_result = conversation_response.json()
+            
+            # Now process with LLM service
+            thread_id = conversation_result.get("thread_id")
             llm_data = {
-                "query": message.content,
+                "query": data.get("content", ""),
                 "thread_id": thread_id,
-                "mode": message.mode,
+                "mode": data.get("mode", "explore"),
                 "conversation_history": conversation_result.get("history", []),
-                "image_context": image_context,
-                "attached_images": message.attached_images
+                "attached_images": data.get("attached_images", [])
             }
             
-            llm_resp = await client.post(
+            llm_response = await client.post(
                 f"{SERVICE_MAP['llm']}/process",
                 json=llm_data,
-                timeout=120.0  # Longer timeout for LLM processing
+                timeout=60.0  # Longer timeout for LLM
             )
             
-            if llm_resp.status_code != 200:
-                logger.error(f"LLM service error: {llm_resp.text}")
-                raise HTTPException(status_code=500, detail="Error generating response")
-                
-            result = llm_resp.json()
+            if llm_response.status_code != 200:
+                return JSONResponse(
+                    status_code=llm_response.status_code,
+                    content=llm_response.json()
+                )
             
-            # 4. Store the result in conversation history
+            # Get LLM result
+            result = llm_response.json()
+            
+            # Store the assistant's response
             await client.post(
                 f"{SERVICE_MAP['conversation']}/update",
                 json={
@@ -170,15 +158,18 @@ async def chat_endpoint(message: ChatMessage):
                 }
             )
             
-            logger.info(f"Completed chat request {request_id}")
-            return result
+            # Return result to client
+            return JSONResponse(
+                status_code=200,
+                content=result
+            )
             
-    except httpx.RequestError as e:
-        logger.error(f"Request error for {request_id}: {str(e)}")
-        raise HTTPException(status_code=503, detail=f"Service communication error: {str(e)}")
     except Exception as e:
-        logger.error(f"Unexpected error for {request_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+        logger.error(f"Error handling chat: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Error processing chat request", "error": str(e)}
+        )
 
 @app.post("/api/speech-to-text/")
 async def speech_to_text_endpoint(audio_data: AudioData):
@@ -288,34 +279,51 @@ async def make_call_endpoint(request: Request):
             media_type=response.headers.get("content-type", "application/json")
         )
 
+# Endpoint to get conversation list
 @app.get("/api/conversations/")
-async def list_conversations_endpoint(limit: int = 20, skip: int = 0):
-    """Forward conversation listing requests to conversation service"""
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-        response = await client.get(
-            f"{SERVICE_MAP['conversation']}/threads",
-            params={"limit": limit, "skip": skip}
-        )
-        
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            media_type=response.headers.get("content-type", "application/json")
+async def get_conversations(limit: int = 20, skip: int = 0):
+    """Get list of conversations from conversation service"""
+    try:
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.get(
+                f"{SERVICE_MAP['conversation']}/threads",
+                params={"limit": limit, "skip": skip}
+            )
+            
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                media_type=response.headers.get("content-type", "application/json")
+            )
+    except Exception as e:
+        logger.error(f"Error getting conversations: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Error fetching conversations", "error": str(e)}
         )
 
+
+# Endpoint to get conversation history
 @app.get("/api/conversations/{thread_id}")
-async def get_conversation_endpoint(thread_id: str, limit: int = 100):
-    """Forward conversation history requests to conversation service"""
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-        response = await client.get(
-            f"{SERVICE_MAP['conversation']}/history/{thread_id}",
-            params={"limit": limit}
-        )
-        
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            media_type=response.headers.get("content-type", "application/json")
+async def get_conversation(thread_id: str, limit: int = 100):
+    """Get conversation history from conversation service"""
+    try:
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.get(
+                f"{SERVICE_MAP['conversation']}/history/{thread_id}",
+                params={"limit": limit}
+            )
+            
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                media_type=response.headers.get("content-type", "application/json")
+            )
+    except Exception as e:
+        logger.error(f"Error getting conversation history: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Error fetching conversation history", "error": str(e)}
         )
 
 @app.delete("/api/conversations/{thread_id}")
@@ -352,49 +360,79 @@ async def rename_conversation_endpoint(thread_id: str, request: ConversationRena
 @app.post("/api/auth/register")
 async def auth_register(request: Request):
     """Forward registration requests to auth service"""
-    data = await request.json()
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-        response = await client.post(
-            f"{SERVICE_MAP['auth']}/register",
-            json=data
-        )
-        
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            media_type=response.headers.get("content-type", "application/json")
+    try:
+        data = await request.json()
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.post(
+                f"{SERVICE_MAP['auth']}/register",
+                json=data
+            )
+            
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                media_type=response.headers.get("content-type", "application/json")
+            )
+    except Exception as e:
+        logger.error(f"Auth register error: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Error processing registration request"}
         )
 
 @app.post("/api/auth/login")
 async def auth_login(request: Request):
-    """Forward login requests to auth service"""
-    data = await request.json()
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-        response = await client.post(
-            f"{SERVICE_MAP['auth']}/login",
-            json=data
-        )
+    """Forward login requests to auth service with proper formatting"""
+    try:
+        # Get request body
+        body = await request.json()
         
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            media_type=response.headers.get("content-type", "application/json")
+        # Create form data expected by FastAPI's OAuth2 form
+        form_data = {
+            "username": body.get("email", ""),  # Use email as username
+            "password": body.get("password", "")
+        }
+        
+        # Forward as form data
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.post(
+                f"{SERVICE_MAP['auth']}/login",
+                data=form_data  # Send as form data, not JSON
+            )
+            
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                media_type=response.headers.get("content-type", "application/json")
+            )
+    except Exception as e:
+        logger.error(f"Auth login error: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Error processing authentication request"}
         )
 
 @app.post("/api/auth/refresh")
 async def auth_refresh(request: Request):
     """Forward token refresh requests to auth service"""
-    data = await request.json()
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-        response = await client.post(
-            f"{SERVICE_MAP['auth']}/refresh",
-            json=data
-        )
-        
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            media_type=response.headers.get("content-type", "application/json")
+    try:
+        data = await request.json()
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.post(
+                f"{SERVICE_MAP['auth']}/refresh",
+                json=data
+            )
+            
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                media_type=response.headers.get("content-type", "application/json")
+            )
+    except Exception as e:
+        logger.error(f"Auth refresh error: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Error processing token refresh"}
         )
 
 @app.post("/api/auth/logout")
