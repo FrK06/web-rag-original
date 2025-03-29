@@ -11,6 +11,9 @@ const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [forceContinue, setForceContinue] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 3;
   const { login, isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const { theme } = useTheme();
@@ -19,6 +22,19 @@ const LoginPage: React.FC = () => {
   // Get the return URL from the query parameters
   const returnUrl = (router.query.returnUrl as string) || '/';
 
+  // Break out of potential auth checking loop after max retries
+  useEffect(() => {
+    if (authLoading && retryCount >= MAX_RETRIES) {
+      console.warn("Auth checking took too long - allowing fallback rendering");
+      setForceContinue(true);
+    } else if (authLoading) {
+      const timer = setTimeout(() => {
+        setRetryCount(prev => prev + 1);
+      }, 5000); // 5 second timeout
+      return () => clearTimeout(timer);
+    }
+  }, [authLoading, retryCount]);
+  
   // Check if user is already authenticated and redirect if needed
   useEffect(() => {
     // If already authenticated and not in the loading state, redirect to returnUrl or home
@@ -27,20 +43,35 @@ const LoginPage: React.FC = () => {
     }
   }, [isAuthenticated, authLoading, router, returnUrl]);
 
-  // If authentication is still being checked, show loading screen
-  if (authLoading) {
+  // If authentication is still being checked and we haven't forced continue, show loading screen
+  if (authLoading && !forceContinue) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-[#0a0a14]' : 'bg-gray-200'}`}>
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+        <div className="flex flex-col items-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
+          <p className={isDark ? 'text-gray-300' : 'text-gray-700'}>
+            Checking authentication status...
+          </p>
+          {retryCount > 0 && (
+            <p className={`mt-2 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              This is taking longer than expected ({retryCount}/{MAX_RETRIES})
+            </p>
+          )}
+        </div>
       </div>
     );
   }
 
   // If user is authenticated, don't render the login form at all (prevent flicker)
-  if (isAuthenticated) {
+  if (isAuthenticated && !forceContinue) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-[#0a0a14]' : 'bg-gray-200'}`}>
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+        <div className="flex flex-col items-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
+          <p className={isDark ? 'text-gray-300' : 'text-gray-700'}>
+            Redirecting to {returnUrl}...
+          </p>
+        </div>
       </div>
     );
   }
@@ -51,11 +82,21 @@ const LoginPage: React.FC = () => {
     setIsLoading(true);
 
     try {
+      // Login with timeout detection built into auth context
       await login(email, password);
       // The useEffect will handle the redirect after successful login
-    } catch (err) {
+    } catch (err: any) {
       console.error('Login error:', err);
-      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+      // More descriptive error messages
+      if (err.message?.includes('timed out')) {
+        setError('Login request timed out. Please check your network connection and try again.');
+      } else if (err.response?.status === 401) {
+        setError('Invalid email or password. Please try again.');
+      } else if (err.response?.data?.message) {
+        setError(err.response.data.message);
+      } else {
+        setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -143,11 +184,12 @@ const LoginPage: React.FC = () => {
                 placeholder="••••••••"
               />
             </div>
-            <div className="flex justify-end mt-1">
+            {/* Comment out the forgot password link since the page doesn't exist yet */}
+            {/* <div className="flex justify-end mt-1">
               <Link href="/forgot-password" className={`text-sm ${isDark ? 'text-indigo-400 hover:text-indigo-300' : 'text-blue-600 hover:text-blue-500'}`}>
                 Forgot password?
               </Link>
-            </div>
+            </div> */}
           </div>
 
           <button
@@ -157,7 +199,7 @@ const LoginPage: React.FC = () => {
               isDark 
                 ? 'tech-gradient futuristic-glow hover:opacity-90' 
                 : 'bg-blue-600 hover:bg-blue-700'
-            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors`}
+            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-70`}
           >
             {isLoading ? (
               <span className="flex items-center">

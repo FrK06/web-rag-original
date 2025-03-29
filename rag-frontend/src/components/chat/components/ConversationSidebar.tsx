@@ -41,11 +41,16 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     try {
       setIsLoading(true);
       setError(null);
-      const conversationsData = await getConversations();
-      setThreads(conversationsData.threads);
-    } catch (err) {
-      setError('Failed to load conversations');
-      console.error('Error loading conversations:', err);
+      
+      try {
+        const conversationsData = await getConversations();
+        setThreads(conversationsData.threads || []);
+      } catch (err) {
+        console.error('Error loading conversations:', err);
+        setError('Failed to load conversations. Please try again later.');
+        // Set empty threads array instead of leaving previous state
+        setThreads([]);
+      }
     } finally {
       setIsLoading(false);
     }

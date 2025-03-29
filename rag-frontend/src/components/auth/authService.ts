@@ -26,7 +26,7 @@ authAxios.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    if (error.response.status === 401 && !originalRequest._retry) {
+    if (error.response && error.response.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
         // Try to refresh token
@@ -39,7 +39,6 @@ authAxios.interceptors.response.use(
         // Refresh failed, redirect to login
         localStorage.removeItem('auth_token');
         localStorage.removeItem('refresh_token');
-        window.location.href = '/login';
         return Promise.reject(refreshError);
       }
     }
@@ -56,38 +55,92 @@ export interface AuthResponse {
 
 export const loginUser = async (email: string, password: string): Promise<AuthResponse> => {
   try {
+    console.log(`Attempting login for: ${email}`);
+    
+    // Send credentials as JSON (API Gateway will convert to form data)
     const response = await axios.post(`${API_URL}/api/auth/login`, {
       email,
       password
     });
+    
+    console.log('Login response received:', response.status);
     return response.data;
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response) {
-      throw new Error(error.response.data.message || 'Login failed');
+    console.error('Login error details:', error);
+    
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        console.error('Server response:', error.response.status, error.response.data);
+        
+        // Extract meaningful error message
+        const errorMessage = 
+          error.response.data?.detail || 
+          error.response.data?.message || 
+          (error.response.status === 401 ? 'Invalid email or password' : 'Login failed');
+        
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        console.error('No response received from server');
+        throw new Error('Server not responding. Please try again later.');
+      } else {
+        console.error('Request setup error:', error.message);
+        throw new Error(`Network error: ${error.message}`);
+      }
     }
-    throw new Error('Network error. Please try again.');
+    
+    throw new Error('Login failed. Please try again.');
   }
 };
 
 export const registerUser = async (name: string, email: string, password: string): Promise<AuthResponse> => {
   try {
+    console.log(`Attempting registration for: ${email}`);
+    
     const response = await axios.post(`${API_URL}/api/auth/register`, {
       name,
       email,
       password
     });
+    
+    console.log('Registration response received:', response.status);
     return response.data;
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response) {
-      throw new Error(error.response.data.message || 'Registration failed');
+    console.error('Registration error details:', error);
+    
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        console.error('Server response:', error.response.status, error.response.data);
+        
+        // Check for common registration errors
+        if (error.response.status === 400) {
+          if (error.response.data?.detail?.includes('Email already registered')) {
+            throw new Error('This email is already registered. Please use a different email.');
+          }
+        }
+        
+        const errorMessage = 
+          error.response.data?.detail || 
+          error.response.data?.message || 
+          'Registration failed';
+        
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('Server not responding. Please try again later.');
+      } else {
+        throw new Error(`Network error: ${error.message}`);
+      }
     }
-    throw new Error('Network error. Please try again.');
+    
+    throw new Error('Registration failed. Please try again later.');
   }
 };
 
 export const logoutUser = async (): Promise<void> => {
   try {
-    await authAxios.post(`${API_URL}/api/auth/logout`);
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) return;
+    
+    await authAxios.post(`${API_URL}/api/auth/logout`, { refresh_token: refreshToken });
   } catch (error) {
     console.error('Logout error:', error);
     // Continue with local logout even if API call fails
@@ -95,8 +148,13 @@ export const logoutUser = async (): Promise<void> => {
 };
 
 export const getCurrentUser = async (): Promise<User> => {
-  const response = await authAxios.get(`${API_URL}/api/auth/me`);
-  return response.data.user;
+  try {
+    const response = await authAxios.get(`${API_URL}/api/auth/me`);
+    return response.data.user || response.data;
+  } catch (error) {
+    console.error('Get current user error:', error);
+    throw error;
+  }
 };
 
 export const refreshToken = async (): Promise<void> => {
@@ -107,21 +165,18 @@ export const refreshToken = async (): Promise<void> => {
   
   try {
     const response = await axios.post(`${API_URL}/api/auth/refresh`, {
-      refreshToken
+      refresh_token: refreshToken
     });
     
-    localStorage.setItem('auth_token', response.data.token);
-    // Some implementations also refresh the refresh token
-    if (response.data.refreshToken) {
-      localStorage.setItem('refresh_token', response.data.refreshToken);
+    localStorage.setItem('auth_token', response.data.token || response.data.access_token);
+    if (response.data.refreshToken || response.data.refresh_token) {
+      localStorage.setItem('refresh_token', response.data.refreshToken || response.data.refresh_token);
     }
   } catch (error) {
-    // Clear tokens on refresh failure
     localStorage.removeItem('auth_token');
     localStorage.removeItem('refresh_token');
     throw error;
   }
 };
 
-// Export the authenticated axios instance for use in other services
 export { authAxios };
