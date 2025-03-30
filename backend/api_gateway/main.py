@@ -385,7 +385,11 @@ async def get_csrf_token(response: Response):
     """Get CSRF token from auth service"""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
+            # Make sure this is sending to the correct endpoint
             auth_response = await client.get(f"{SERVICE_MAP['auth']}/csrf-token")
+            
+            # Debug response
+            print(f"Auth service response: {auth_response.status_code}, {await auth_response.text()}")
             
             # Copy cookies from auth service response
             for header, value in auth_response.headers.items():
@@ -396,7 +400,7 @@ async def get_csrf_token(response: Response):
             return auth_response.json()
     except Exception as e:
         logger.error(f"Error getting CSRF token: {str(e)}")
-        return {"token": "fallback-csrf-token", "error": "Could not connect to auth service"}
+        return {"token": "fallback-csrf-token", "error": str(e)}
 
 @app.post("/api/auth/register")
 async def auth_register(request: Request):

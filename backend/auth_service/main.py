@@ -1,5 +1,5 @@
 # backend/auth_service/main.py
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Response, APIRouter
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, Dict, Any
@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI(title="Authentication Service")
 
+public_router = APIRouter()
+
 # MongoDB connection settings
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
 DB_NAME = os.getenv("MONGO_DB", "ragassistant")
@@ -53,7 +55,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+# Add after your middleware setup
+app.include_router(public_router)
 # Auth models
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
@@ -227,14 +230,15 @@ async def health_check():
             "error": str(e)
         }
 
-@app.get("/csrf-token", response_model=CSRFResponse)
+# Move the CSRF endpoint to the public router
+@public_router.get("/csrf-token", response_model=CSRFResponse)
 async def get_csrf_token(response: Response):
-    """Get a new CSRF token using the existing implementation"""
+    """Get a new CSRF token"""
     logger.info("CSRF token endpoint called")
     
-    # Use the existing generate_csrf_token function
+    # Generate token
     token = generate_csrf_token()
-    logger.info(f"Generated CSRF token with existing function")
+    logger.info("Generated CSRF token")
     
     # Set CSRF token as a cookie (HTTP only for security)
     response.set_cookie(
