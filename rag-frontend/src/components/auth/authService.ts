@@ -81,7 +81,7 @@ export interface TokenResponse {
   token_type: string;
 }
 
-// Auth API functions
+// Fetch a CSRF token
 export const getCsrfToken = async (): Promise<string> => {
   try {
     const response = await apiClient.get('/api/auth/csrf-token');
@@ -97,18 +97,45 @@ export const getCsrfToken = async (): Promise<string> => {
   }
 };
 
+// Login function with proper form data
 export const loginUser = async (
   email: string, 
-  password: string, 
-  csrfToken: string
+  password: string
 ): Promise<{ user: User; token: string; refreshToken: string }> => {
   try {
-    // Ensure CSRF token is included in headers
-    apiClient.defaults.headers.common['X-CSRF-Token'] = csrfToken;
+    // Step 1: Get CSRF token explicitly and log it
+    const csrfResponse = await apiClient.get('/api/auth/csrf-token');
+    console.log("CSRF Response:", csrfResponse.data);
+    const token = csrfResponse.data.token;
     
-    const response = await apiClient.post<AuthResponse>('/api/auth/login', {
-      email,
-      password
+    // Check if token exists
+    if (!token) {
+      console.error("No CSRF token received from server");
+      throw new Error("No CSRF token received");
+    }
+    
+    console.log("Setting CSRF token in headers:", token);
+    
+    // Step 2: Explicitly set the token in headers
+    apiClient.defaults.headers.common['X-CSRF-Token'] = token;
+    
+    // Log all headers to verify
+    console.log("Request headers:", apiClient.defaults.headers);
+    
+    // Step 3: Prepare form data
+    const formData = new URLSearchParams();
+    formData.append('username', email);
+    formData.append('password', password);
+    
+    // Step 4: Make login request with debugging
+    console.log("Sending login request with form data:", formData.toString());
+    const response = await apiClient.post('/api/auth/login', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        // Explicitly include the CSRF token again to be sure
+        'X-CSRF-Token': token
+      },
+      withCredentials: true
     });
     
     return {
@@ -119,39 +146,31 @@ export const loginUser = async (
   } catch (error) {
     console.error('Login error details:', error);
     
-    // Enhance error handling
-    if (axios.isAxiosError(error)) {
-      if (error.response) {
-        const status = error.response.status;
-        const errorData = error.response.data;
-        
-        // Map common error codes to user-friendly messages
-        if (status === 401) {
-          throw new Error('Invalid email or password');
-        } else if (status === 429) {
-          throw new Error('Rate limit exceeded. Please try again later');
-        } else if (errorData?.detail) {
-          throw new Error(errorData.detail);
-        }
-      } else if (error.request) {
-        throw new Error('Server not responding. Please try again later');
-      }
+    // Enhanced error logging
+    if (axios.isAxiosError(error) && error.response) {
+      console.error("Error response data:", error.response.data);
+      console.error("Error status:", error.response.status);
+      console.error("Error headers:", error.response.headers);
     }
     
-    throw error;
+    // Rethrow with better error message
+    throw new Error(
+      error instanceof Error ? error.message : 'Login failed. Please try again.'
+    );
   }
 };
 
+// Registration function with CSRF token
 export const registerUser = async (
   name: string, 
   email: string, 
-  password: string,
-  csrfToken: string
+  password: string
 ): Promise<{ user: User; token: string; refreshToken: string }> => {
   try {
-    // Ensure CSRF token is included in headers
-    apiClient.defaults.headers.common['X-CSRF-Token'] = csrfToken;
+    // Step 1: Get CSRF token first
+    await getCsrfToken();
     
+    // Step 2: Make the registration request
     const response = await apiClient.post<AuthResponse>('/api/auth/register', {
       name,
       email,
@@ -181,6 +200,7 @@ export const registerUser = async (
   }
 };
 
+// Token refresh function
 export const refreshToken = async (): Promise<{ accessToken: string }> => {
   const refreshTokenValue = localStorage.getItem('refresh_token');
   
@@ -189,6 +209,10 @@ export const refreshToken = async (): Promise<{ accessToken: string }> => {
   }
   
   try {
+    // First, get a fresh CSRF token
+    await getCsrfToken();
+    
+    // Send the refresh token request
     const response = await apiClient.post<TokenResponse>('/api/auth/refresh', {
       refresh_token: refreshTokenValue
     });
@@ -218,10 +242,11 @@ export const refreshToken = async (): Promise<{ accessToken: string }> => {
   }
 };
 
-export const logoutUser = async (refreshToken: string, csrfToken: string): Promise<void> => {
+// Logout function
+export const logoutUser = async (refreshToken: string): Promise<void> => {
   try {
-    // Ensure CSRF token is included in headers
-    apiClient.defaults.headers.common['X-CSRF-Token'] = csrfToken;
+    // Get fresh CSRF token
+    await getCsrfToken();
     
     await apiClient.post('/api/auth/logout', { 
       refresh_token: refreshToken 
@@ -232,6 +257,7 @@ export const logoutUser = async (refreshToken: string, csrfToken: string): Promi
   }
 };
 
+// Get current user info
 export const getCurrentUser = async (): Promise<User> => {
   try {
     const response = await apiClient.get('/api/auth/me');
@@ -242,10 +268,11 @@ export const getCurrentUser = async (): Promise<User> => {
   }
 };
 
-export const requestPasswordReset = async (email: string, csrfToken: string): Promise<void> => {
+// Password reset request
+export const requestPasswordReset = async (email: string): Promise<void> => {
   try {
-    // Ensure CSRF token is included in headers
-    apiClient.defaults.headers.common['X-CSRF-Token'] = csrfToken;
+    // Get fresh CSRF token
+    await getCsrfToken();
     
     await apiClient.post('/api/auth/request-reset', { email });
   } catch (error) {
@@ -255,14 +282,14 @@ export const requestPasswordReset = async (email: string, csrfToken: string): Pr
   }
 };
 
+// Confirm password reset
 export const resetPassword = async (
   token: string, 
-  newPassword: string, 
-  csrfToken: string
+  newPassword: string
 ): Promise<void> => {
   try {
-    // Ensure CSRF token is included in headers
-    apiClient.defaults.headers.common['X-CSRF-Token'] = csrfToken;
+    // Get fresh CSRF token
+    await getCsrfToken();
     
     await apiClient.post('/api/auth/reset-password', {
       token,

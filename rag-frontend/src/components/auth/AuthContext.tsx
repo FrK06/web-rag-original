@@ -23,7 +23,6 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  csrfToken: string;
   login: (email: string, password: string) => Promise<User>;
   register: (name: string, email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
@@ -37,7 +36,6 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
   isAuthenticated: false,
-  csrfToken: '',
   login: async () => { throw new Error('AuthContext not initialized'); },
   register: async () => { throw new Error('AuthContext not initialized'); },
   logout: async () => { throw new Error('AuthContext not initialized'); },
@@ -51,7 +49,6 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [csrfToken, setCsrfToken] = useState('');
   const [refreshTimeout, setRefreshTimeout] = useState<NodeJS.Timeout | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 3;
@@ -78,7 +75,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshCsrfToken = useCallback(async (): Promise<string> => {
     try {
       const newToken = await getCsrfToken();
-      setCsrfToken(newToken);
       return newToken;
     } catch (error) {
       console.error('Failed to refresh CSRF token:', error);
@@ -189,11 +185,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = useCallback(async (email: string, password: string): Promise<User> => {
     setIsLoading(true);
     try {
-      // Refresh CSRF token before sensitive operations
-      await refreshCsrfToken();
-      
+      // Get the user data and tokens
       const { user, token, refreshToken: refresh } = await withTimeout(
-        loginUser(email, password, csrfToken),
+        loginUser(email, password),
         AUTH_TIMEOUT * 2, // Give login more time
         "Login request timed out"
       );
@@ -211,17 +205,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
-  }, [csrfToken, withTimeout, refreshCsrfToken, setupRefreshTimer]);
+  }, [withTimeout, setupRefreshTimer]);
 
   // Register function
   const register = useCallback(async (name: string, email: string, password: string): Promise<User> => {
     setIsLoading(true);
     try {
-      // Refresh CSRF token before sensitive operations
-      await refreshCsrfToken();
-      
+      // Get the user data and tokens
       const { user, token, refreshToken: refresh } = await withTimeout(
-        registerUser(name, email, password, csrfToken),
+        registerUser(name, email, password),
         AUTH_TIMEOUT * 2,
         "Registration request timed out"
       );
@@ -238,20 +230,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
-  }, [csrfToken, withTimeout, refreshCsrfToken, setupRefreshTimer]);
+  }, [withTimeout, setupRefreshTimer]);
 
   // Logout function
   const logout = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     try {
-      // Refresh CSRF token before sensitive operations
-      await refreshCsrfToken();
-      
       // Try to inform the server, but don't wait too long
       const refreshTokenValue = localStorage.getItem('refresh_token');
       if (refreshTokenValue) {
         await Promise.race([
-          logoutUser(refreshTokenValue, csrfToken),
+          logoutUser(refreshTokenValue),
           new Promise(resolve => setTimeout(resolve, 2000)) // 2s max
         ]);
       }
@@ -273,16 +262,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(false);
       router.push('/login');
     }
-  }, [csrfToken, refreshCsrfToken, refreshTimeout, router]);
+  }, [refreshTimeout, router]);
 
   // Password reset request
   const resetPasswordRequest = useCallback(async (email: string): Promise<void> => {
     try {
-      // Refresh CSRF token before sensitive operations
-      await refreshCsrfToken();
-      
       await withTimeout(
-        requestPasswordReset(email, csrfToken),
+        requestPasswordReset(email),
         AUTH_TIMEOUT,
         "Password reset request timed out"
       );
@@ -291,16 +277,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // We intentionally don't re-throw the error here to avoid
       // disclosing whether an email exists in the system
     }
-  }, [csrfToken, withTimeout, refreshCsrfToken]);
+  }, [withTimeout]);
 
   // Confirm password reset
   const confirmPasswordReset = useCallback(async (token: string, newPassword: string): Promise<void> => {
     try {
-      // Refresh CSRF token before sensitive operations
-      await refreshCsrfToken();
-      
       await withTimeout(
-        resetPassword(token, newPassword, csrfToken),
+        resetPassword(token, newPassword),
         AUTH_TIMEOUT,
         "Password reset confirmation timed out"
       );
@@ -308,14 +291,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error("Password reset confirmation error:", error);
       throw error;
     }
-  }, [csrfToken, withTimeout, refreshCsrfToken]);
+  }, [withTimeout]);
 
   // Provide auth context
   const value = {
     user,
     isLoading,
     isAuthenticated: !!user,
-    csrfToken,
     login,
     register,
     logout,
