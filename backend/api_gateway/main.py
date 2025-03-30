@@ -361,6 +361,25 @@ async def rename_conversation_endpoint(thread_id: str, request: ConversationRena
     
 # Authentication routes
 
+@app.get("/api/auth/test")
+async def auth_test():
+    """Test connection to auth service"""
+    auth_url = f"{SERVICE_MAP['auth']}/test"
+    logger.info(f"Testing auth service at: {auth_url}")
+    
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(auth_url)
+            logger.info(f"Auth service test response: {response.status_code}")
+            return response.json()
+    except Exception as e:
+        logger.error(f"Error connecting to auth service: {str(e)}")
+        return {
+            "status": "error", 
+            "message": f"Could not connect to auth service: {str(e)}",
+            "auth_url": auth_url
+        }
+
 @app.get("/api/auth/csrf-token")
 async def get_csrf_token(response: Response):
     """Get CSRF token from auth service"""

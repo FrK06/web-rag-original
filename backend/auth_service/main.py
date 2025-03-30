@@ -227,23 +227,26 @@ async def health_check():
             "error": str(e)
         }
 
-@app.get("/csrf-token")
+@app.get("/csrf-token", response_model=CSRFResponse)
 async def get_csrf_token(response: Response):
-    """Generate a CSRF token"""
-    # Generate a random token
-    token = secrets.token_hex(16)
+    """Get a new CSRF token using the existing implementation"""
+    logger.info("CSRF token endpoint called")
     
-    # Set it as a cookie
+    # Use the existing generate_csrf_token function
+    token = generate_csrf_token()
+    logger.info(f"Generated CSRF token with existing function")
+    
+    # Set CSRF token as a cookie (HTTP only for security)
     response.set_cookie(
         key="csrf_token",
         value=token,
         httponly=True,
-        secure=False,  # Set to True in production
+        secure=False,  # Set to True in production with HTTPS
         samesite="lax",
         max_age=3600  # 1 hour
     )
+    logger.info("Set CSRF cookie")
     
-    # Return the token in the response body
     return {"token": token}
 
 @app.post("/register", response_model=TokenResponse)
