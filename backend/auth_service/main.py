@@ -249,6 +249,12 @@ async def get_csrf_token(response: Response):
     
     return {"token": token}
 
+@app.get("/test")
+async def test_endpoint():
+    """Simple test endpoint to check if the service is responsive"""
+    logger.info("Test endpoint called")
+    return {"status": "ok", "message": "Auth service is running"}
+
 @app.post("/register", response_model=TokenResponse)
 async def register(user_data: UserCreate):
     """Register a new user"""
