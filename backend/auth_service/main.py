@@ -1,5 +1,5 @@
 # backend/auth_service/main.py
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Response, Cookie
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, Dict, Any
@@ -8,6 +8,7 @@ import os
 from datetime import datetime, timedelta
 import uuid
 from pydantic import BaseModel, EmailStr, Field
+import secrets
 
 # Import security modules
 from security.middleware import (
@@ -226,21 +227,23 @@ async def health_check():
             "error": str(e)
         }
 
-@app.get("/csrf-token", response_model=CSRFResponse)
+@app.get("/csrf-token")
 async def get_csrf_token(response: Response):
-    """Get a new CSRF token"""
-    token = generate_csrf_token()
+    """Generate a CSRF token"""
+    # Generate a random token
+    token = secrets.token_hex(16)
     
-    # Set CSRF token as a cookie (HTTP only for security)
+    # Set it as a cookie
     response.set_cookie(
         key="csrf_token",
         value=token,
         httponly=True,
-        secure=True,  # Requires HTTPS
+        secure=False,  # Set to True in production
         samesite="lax",
         max_age=3600  # 1 hour
     )
     
+    # Return the token in the response body
     return {"token": token}
 
 @app.post("/register", response_model=TokenResponse)

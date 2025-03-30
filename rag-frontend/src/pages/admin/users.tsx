@@ -88,7 +88,7 @@ export default function AdminUsersPage() {
   };
 
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute>
       <div className={`min-h-screen ${isDark ? 'bg-[#0a0a14]' : 'bg-gray-100'}`}>
         <div className="container mx-auto px-4 py-6">
           <h1 className={`text-2xl font-bold mb-6 ${isDark ? 'text-white' : 'text-gray-800'}`}>

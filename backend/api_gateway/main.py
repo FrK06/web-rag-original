@@ -360,6 +360,25 @@ async def rename_conversation_endpoint(thread_id: str, request: ConversationRena
         )
     
 # Authentication routes
+
+@app.get("/api/auth/csrf-token")
+async def get_csrf_token(response: Response):
+    """Get CSRF token from auth service"""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            auth_response = await client.get(f"{SERVICE_MAP['auth']}/csrf-token")
+            
+            # Copy cookies from auth service response
+            for header, value in auth_response.headers.items():
+                if header.lower() == 'set-cookie':
+                    response.headers[header] = value
+            
+            # Return the token
+            return auth_response.json()
+    except Exception as e:
+        logger.error(f"Error getting CSRF token: {str(e)}")
+        return {"token": "fallback-csrf-token", "error": "Could not connect to auth service"}
+
 @app.post("/api/auth/register")
 async def auth_register(request: Request):
     """Forward registration requests to auth service"""

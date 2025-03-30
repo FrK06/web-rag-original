@@ -1,6 +1,6 @@
 // src/components/auth/social-login.tsx
 import { useState } from 'react';
-import { Google, Github, Facebook, Loader2 } from 'lucide-react';
+import { Mail, Code, MessageSquare, Loader2 } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 
 // OAuth configuration
@@ -8,7 +8,7 @@ const OAUTH_CONFIG = {
   google: {
     url: '/api/auth/oauth/google',
     name: 'Google',
-    icon: Google,
+    icon: Mail,
     color: 'bg-white hover:bg-gray-100',
     textColor: 'text-gray-800',
     iconColor: 'text-red-500',
@@ -16,7 +16,7 @@ const OAUTH_CONFIG = {
   github: {
     url: '/api/auth/oauth/github',
     name: 'GitHub',
-    icon: Github,
+    icon: Code,
     color: 'bg-gray-900 hover:bg-gray-800',
     textColor: 'text-white',
     iconColor: 'text-white',
@@ -24,7 +24,7 @@ const OAUTH_CONFIG = {
   facebook: {
     url: '/api/auth/oauth/facebook',
     name: 'Facebook',
-    icon: Facebook,
+    icon: MessageSquare,
     color: 'bg-blue-600 hover:bg-blue-700',
     textColor: 'text-white',
     iconColor: 'text-white',
