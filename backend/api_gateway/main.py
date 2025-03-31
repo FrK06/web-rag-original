@@ -207,13 +207,15 @@ async def text_to_speech_endpoint(request: TTSRequest):
     async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
         response = await client.post(
             f"{SERVICE_MAP['multimedia']}/text-to-speech",
-            json={"text": request.text, "voice": request.voice}
+            json={"text": request.text, "voice": request.voice},
+            headers={"Authorization": request.headers.get("Authorization")}
         )
         
+        # Ensure proper content-type for audio response
         return Response(
             content=response.content,
             status_code=response.status_code,
-            media_type=response.headers.get("content-type", "application/json")
+            media_type="application/json"  # Keep this as JSON since we're returning structured data
         )
 
 @app.post("/api/direct-image-generation/")

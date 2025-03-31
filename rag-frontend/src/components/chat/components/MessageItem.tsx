@@ -106,7 +106,10 @@ const MessageItem: React.FC<MessageItemProps> = ({
                   </button>
                 ) : (
                   <button 
-                    onClick={() => onPlayAudio(message.content, index)}
+                    onClick={() => {
+                      console.log("Playing audio for message:", message.content.substring(0, 30) + "...");
+                      onPlayAudio(message.content, index);
+                    }}
                     className={`p-1 rounded-full ${
                       isDark 
                         ? 'bg-indigo-900/50 text-indigo-300 hover:bg-indigo-800/60' 

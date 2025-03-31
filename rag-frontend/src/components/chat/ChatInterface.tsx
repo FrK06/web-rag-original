@@ -278,72 +278,110 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userName }) => {
   };
 
   // Play text-to-speech audio
-  const playAudio = async (text: string, messageIndex?: number) => {
-    try {
-      // Stop any currently playing audio
-      if (currentAudio) {
-        currentAudio.pause();
-      }
-      
-      setIsSpeaking(true);
-      
-      // Get audio data
-      const audioUrl = await getTextToSpeech(text);
-      console.log("Received audio URL:", audioUrl ? audioUrl.substring(0, 50) + "..." : "none");
-      
-      if (!audioUrl) {
-        throw new Error("No audio data received");
-      }
-      
-      // Create and play audio element
-      const audio = new Audio();
-      
-      // Add error handling for audio
-      audio.onerror = (e) => {
-        console.error("Audio error:", e);
-        setError("Failed to play audio: " + (e as any).message);
-        setIsSpeaking(false);
-      };
-      
-      // Set source and load
-      audio.src = audioUrl;
-      await audio.load(); // Explicitly load before playing
-      
-      // Try to play
-      setCurrentAudio(audio);
-      await audio.play();
-      
-      // If messageIndex is provided, update the message with the audio URL
-      if (messageIndex !== undefined) {
-        setMessages(prev => 
-          prev.map((msg, idx) => 
-            idx === messageIndex ? { ...msg, audioUrl } : msg
-          )
-        );
-      }
-      
-      // Handle audio end
-      audio.onended = () => {
-        setIsSpeaking(false);
-        setCurrentAudio(null);
-      };
-      
-    } catch (error) {
-      console.error('Error playing audio:', error);
-      setError('Failed to play audio. Please try again.');
-      setIsSpeaking(false);
-    }
-  };
+  // In ChatInterface.tsx
+// In ChatInterface.tsx - Update the playAudio function
+const cleanupAudio = (audio: HTMLAudioElement | null) => {
+  if (!audio) return;
+  
+  try {
+    // Remove all event listeners first
+    audio.onended = null;
+    audio.onerror = null;
+    audio.oncanplay = null;
+    audio.oncanplaythrough = null;
+    
+    // Pause and reset
+    audio.pause();
+    audio.currentTime = 0;
+    audio.src = '';
+    
+    // Force browser to forget about this element
+    audio.load();
+  } catch (e) {
+    console.log("Cleanup error:", e);
+  }
+};
 
-  // Stop text-to-speech audio
-  const stopAudio = () => {
-    if (currentAudio) {
-      currentAudio.pause();
-      currentAudio.src = '';
-      setCurrentAudio(null);
+// Then update the playAudio function
+const playAudio = async (text: string, messageIndex?: number) => {
+  try {
+    // Clean up any existing audio
+    cleanupAudio(currentAudio);
+    setCurrentAudio(null);
+    
+    setIsSpeaking(true);
+    
+    // Get audio data
+    const audioUrl = await getTextToSpeech(text);
+    
+    if (!audioUrl) {
+      throw new Error("No audio data received");
     }
+    
+    // Create a new audio element with proper event handling
+    const audio = new Audio();
+    
+    // Create one-time event handlers that clean themselves up
+    const handleEnded = () => {
+      console.log("Audio playback completed");
+      setIsSpeaking(false);
+      setCurrentAudio(null);
+      
+      // Remove event listeners
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', handleError);
+      
+      // Clean up
+      cleanupAudio(audio);
+    };
+    
+    const handleError = (e: Event) => {
+      console.log("Audio error during playback - handled");
+      setIsSpeaking(false);
+      
+      // Remove event listeners
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', handleError);
+      
+      // Clean up
+      cleanupAudio(audio);
+    };
+    
+    // Use addEventListener instead of on* properties
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('error', handleError);
+    
+    // Set source and track current audio
+    audio.src = audioUrl;
+    setCurrentAudio(audio);
+    
+    // Play the audio
+    await audio.play();
+    
+    // If messageIndex is provided, update the message with the audio URL
+    if (messageIndex !== undefined) {
+      setMessages(prev => 
+        prev.map((msg, idx) => 
+          idx === messageIndex ? { ...msg, audioUrl } : msg
+        )
+      );
+    }
+    
+  } catch (error) {
+    console.error('Error playing audio:', error);
+    setError('Failed to play audio. Please try again.');
     setIsSpeaking(false);
-  };
+    cleanupAudio(currentAudio);
+    setCurrentAudio(null);
+  }
+};
+
+// Also update the stopAudio function
+const stopAudio = () => {
+  cleanupAudio(currentAudio);
+  setCurrentAudio(null);
+  setIsSpeaking(false);
+};
 
   // Open image modal
   const openImageModal = (imageUrl: string) => {

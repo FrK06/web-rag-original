@@ -150,19 +150,40 @@ export const processSpeech = async (audioBlob: Blob): Promise<string> => {
   }
 };
 
+// In apiService.ts
 export const getTextToSpeech = async (text: string): Promise<string> => {
   try {
     return await withRetry(async () => {
       const response = await axios.post<TextToSpeechResponse>(`${API_URL}/api/text-to-speech/`, {
         text,
-        voice: 'alloy' // Can be customized later
+        voice: 'alloy'
       }, {
         headers: getAuthHeaders(),
         withCredentials: true
       });
       
       if (response.data.status === 'success') {
-        return response.data.audio; // Base64 encoded audio with data URL prefix
+        // Fix the base64 format
+        const audioData = response.data.audio;
+        console.log("Raw audio response:", audioData?.substring(0, 30));
+        
+        // Properly format the data URL
+        if (audioData) {
+          // If it already has correct data URL prefix, return as is
+          if (audioData.startsWith('data:audio/mp3;base64,')) {
+            return audioData;
+          }
+          
+          // If it has incorrect double slash format, fix it
+          if (audioData.startsWith('data:audio/mp3;base64//')) {
+            return audioData.replace('data:audio/mp3;base64//', 'data:audio/mp3;base64,');
+          }
+          
+          // If it's just raw base64, add the prefix
+          return `data:audio/mp3;base64,${audioData}`;
+        }
+        
+        throw new Error('No audio data in response');
       } else {
         throw new Error('Failed to generate speech');
       }
