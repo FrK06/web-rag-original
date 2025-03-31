@@ -10,12 +10,19 @@ import {
   ImageProcessingResponse
 } from '../types';
 
-// API base URL - can be configured via environment variable
+// API configuration
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-// Default timeout and retry settings
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
 const DEFAULT_MAX_RETRIES = 3;
+
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('auth_token');
+  return {
+    'Authorization': token ? `Bearer ${token}` : '',
+    'X-CSRF-Token': localStorage.getItem('csrf_token') || ''
+  };
+};
 
 // Helper function to implement retry logic
 async function withRetry<T>(
@@ -73,10 +80,9 @@ export const sendMessage = async (
   messages: Message[]
 ): Promise<ChatResponse> => {
   try {
-    // Add this debug line
-    console.log('Using auth token:', localStorage.getItem('auth_token'));
+    console.log('Sending message with auth token:', localStorage.getItem('auth_token') ? 'present' : 'missing');
     
-    // Format conversation history - keep this part from the original code
+    // Format conversation history
     const formattedMessages = messages.map(msg => ({
       role: msg.type === 'user' ? 'user' : 'assistant',
       content: msg.content,
@@ -92,10 +98,8 @@ export const sendMessage = async (
         conversation_history: formattedMessages
       }, {
         timeout: DEFAULT_TIMEOUT,
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-          'X-CSRF-Token': localStorage.getItem('csrf_token') || ''
-        }
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       return response.data;
@@ -129,7 +133,9 @@ export const processSpeech = async (audioBlob: Blob): Promise<string> => {
       const response = await axios.post<SpeechToTextResponse>(`${API_URL}/api/speech-to-text/`, {
         audio: base64Audio
       }, {
-        timeout: 60000 // Speech processing might take longer
+        timeout: 60000, // Speech processing might take longer
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -150,6 +156,9 @@ export const getTextToSpeech = async (text: string): Promise<string> => {
       const response = await axios.post<TextToSpeechResponse>(`${API_URL}/api/text-to-speech/`, {
         text,
         voice: 'alloy' // Can be customized later
+      }, {
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -174,7 +183,9 @@ export const generateImageDirectly = async (prompt: string): Promise<string> => 
         style: 'vivid',
         quality: 'standard'
       }, {
-        timeout: 60000 // Image generation can take longer
+        timeout: 60000, // Image generation can take longer
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -198,7 +209,9 @@ export const generateImage = async (prompt: string): Promise<string> => {
         style: 'vivid',
         quality: 'standard'
       }, {
-        timeout: 60000
+        timeout: 60000,
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -218,6 +231,9 @@ export const analyzeImage = async (imageData: string): Promise<string> => {
     return await withRetry(async () => {
       const response = await axios.post<ImageAnalysisResponse>(`${API_URL}/api/analyze-image/`, {
         image: imageData
+      }, {
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -238,6 +254,9 @@ export const processImage = async (imageData: string, operation: string): Promis
       const response = await axios.post<ImageProcessingResponse>(`${API_URL}/api/process-image/`, {
         image: imageData,
         operation: operation
+      }, {
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -284,9 +303,13 @@ export interface ThreadHistoryResponse {
  */
 export const getConversations = async (): Promise<ConversationsResponse> => {
   try {
+    console.log("Fetching conversations with auth token:", localStorage.getItem('auth_token') ? 'present' : 'missing');
+    
     return await withRetry(async () => {
       const response = await axios.get<ConversationsResponse>(`${API_URL}/api/conversations/`, {
-        timeout: 10000
+        timeout: 10000,
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       return response.data;
     });
@@ -303,7 +326,10 @@ export const getConversations = async (): Promise<ConversationsResponse> => {
 export const getConversationHistory = async (threadId: string): Promise<ThreadHistoryResponse> => {
   try {
     return await withRetry(async () => {
-      const response = await axios.get<ThreadHistoryResponse>(`${API_URL}/api/conversations/${threadId}`);
+      const response = await axios.get<ThreadHistoryResponse>(`${API_URL}/api/conversations/${threadId}`, {
+        headers: getAuthHeaders(),
+        withCredentials: true
+      });
       return response.data;
     });
   } catch (error) {
@@ -318,7 +344,10 @@ export const getConversationHistory = async (threadId: string): Promise<ThreadHi
 export const deleteConversation = async (threadId: string): Promise<{status: string}> => {
   try {
     return await withRetry(async () => {
-      const response = await axios.delete(`${API_URL}/api/conversations/${threadId}`);
+      const response = await axios.delete(`${API_URL}/api/conversations/${threadId}`, {
+        headers: getAuthHeaders(),
+        withCredentials: true
+      });
       return response.data;
     });
   } catch (error) {
@@ -335,6 +364,9 @@ export const renameConversation = async (threadId: string, newName: string): Pro
     return await withRetry(async () => {
       const response = await axios.put(`${API_URL}/api/conversations/${threadId}/rename`, {
         name: newName
+      }, {
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       return response.data;
     });

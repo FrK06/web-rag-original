@@ -289,12 +289,28 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userName }) => {
       
       // Get audio data
       const audioUrl = await getTextToSpeech(text);
+      console.log("Received audio URL:", audioUrl ? audioUrl.substring(0, 50) + "..." : "none");
+      
+      if (!audioUrl) {
+        throw new Error("No audio data received");
+      }
       
       // Create and play audio element
-      const audio = new Audio(audioUrl);
-      setCurrentAudio(audio);
+      const audio = new Audio();
       
-      // Play audio
+      // Add error handling for audio
+      audio.onerror = (e) => {
+        console.error("Audio error:", e);
+        setError("Failed to play audio: " + (e as any).message);
+        setIsSpeaking(false);
+      };
+      
+      // Set source and load
+      audio.src = audioUrl;
+      await audio.load(); // Explicitly load before playing
+      
+      // Try to play
+      setCurrentAudio(audio);
       await audio.play();
       
       // If messageIndex is provided, update the message with the audio URL
