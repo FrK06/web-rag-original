@@ -196,6 +196,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('auth_token', token);
       localStorage.setItem('refresh_token', refresh);
       
+      // Debug log to confirm token is stored
+      console.log("Token stored:", token.substring(0, 20) + "...");
+      
       setUser(user);
       setupRefreshTimer();
       return user;

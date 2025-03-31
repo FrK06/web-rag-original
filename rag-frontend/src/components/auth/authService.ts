@@ -23,6 +23,13 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Also add CSRF token
+    const csrfToken = localStorage.getItem('csrf_token');
+    if (csrfToken) {
+      config.headers['X-CSRF-Token'] = csrfToken;
+    }
+    
     return config;
   },
   (error) => Promise.reject(error)
@@ -87,8 +94,13 @@ export const getCsrfToken = async (): Promise<string> => {
     const response = await apiClient.get('/api/auth/csrf-token');
     const token = response.data.token;
     
+    // Store in localStorage for use in requests
+    localStorage.setItem('csrf_token', token);
+    
     // Update the default headers with the new CSRF token
     apiClient.defaults.headers.common['X-CSRF-Token'] = token;
+    
+    console.log("CSRF token fetched and stored:", token);
     
     return token;
   } catch (error) {
@@ -103,41 +115,27 @@ export const loginUser = async (
   password: string
 ): Promise<{ user: User; token: string; refreshToken: string }> => {
   try {
-    // Step 1: Get CSRF token explicitly and log it
-    const csrfResponse = await apiClient.get('/api/auth/csrf-token');
-    console.log("CSRF Response:", csrfResponse.data);
-    const token = csrfResponse.data.token;
+    // Step 1: Get CSRF token explicitly
+    await getCsrfToken();
     
-    // Check if token exists
-    if (!token) {
-      console.error("No CSRF token received from server");
-      throw new Error("No CSRF token received");
-    }
+    console.log("Sending login request with credentials:", { email });
     
-    console.log("Setting CSRF token in headers:", token);
-    
-    // Step 2: Explicitly set the token in headers
-    apiClient.defaults.headers.common['X-CSRF-Token'] = token;
-    
-    // Log all headers to verify
-    console.log("Request headers:", apiClient.defaults.headers);
-    
-    // Step 3: Prepare form data
-    const formData = new URLSearchParams();
+    // Step 2: Create form data
+    const formData = new FormData();
     formData.append('username', email);
     formData.append('password', password);
     
-    // Step 4: Make login request with debugging
-    console.log("Sending login request with form data:", formData.toString());
+    // Step 3: Make login request with proper content type
     const response = await apiClient.post('/api/auth/login', formData, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        // Explicitly include the CSRF token again to be sure
-        'X-CSRF-Token': token
-      },
-      withCredentials: true
+        'X-CSRF-Token': localStorage.getItem('csrf_token') || ''
+      }
     });
     
+    console.log("Login successful, storing tokens");
+    
+    // Step 4: Return the response data
     return {
       user: response.data.user,
       token: response.data.access_token,
@@ -146,16 +144,11 @@ export const loginUser = async (
   } catch (error) {
     console.error('Login error details:', error);
     
-    // Enhanced error logging
-    if (axios.isAxiosError(error) && error.response) {
-      console.error("Error response data:", error.response.data);
-      console.error("Error status:", error.response.status);
-      console.error("Error headers:", error.response.headers);
-    }
-    
-    // Rethrow with better error message
+    // Throw a more user-friendly error
     throw new Error(
-      error instanceof Error ? error.message : 'Login failed. Please try again.'
+      error instanceof Error ? 
+        error.message : 
+        'Login failed. Please check your credentials and try again.'
     );
   }
 };

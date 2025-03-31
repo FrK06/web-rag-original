@@ -24,7 +24,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+@app.middleware("http")
+async def add_cors_headers_to_error(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Add CORS headers to all responses including errors
+    if request.headers.get("origin"):
+        response.headers["Access-Control-Allow-Origin"] = request.headers["origin"]
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-Token"
+    
+    return response
 # Service URLs - configurable through environment variables
 SERVICE_MAP = {
     "conversation": os.getenv("CONVERSATION_SERVICE_URL", "http://conversation-service:8001"),
@@ -471,7 +482,7 @@ async def auth_login(request: Request):
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             response = await client.post(
                 f"{SERVICE_MAP['auth']}/login",
-                data=login_data,
+                data=login_data,  # Send as form data, not JSON
                 cookies=request.cookies,
                 headers={"X-CSRF-Token": request.headers.get("X-CSRF-Token", "")}
             )
@@ -566,10 +577,17 @@ async def auth_middleware(request: Request, call_next):
     if request.url.path.startswith("/api/auth/") or request.url.path == "/api/health":
         return await call_next(request)
     
+    # Add debug logging
+    logger.info(f"Request path: {request.url.path}")
+    logger.info(f"Request headers: {request.headers}")
+    
     # Check for auth header
     auth_header = request.headers.get("Authorization")
     
     if not auth_header or not auth_header.startswith("Bearer "):
+        # Debug log
+        logger.error(f"Missing or invalid auth header: {auth_header}")
+        
         # If it's OPTIONS request (preflight), let it pass
         if request.method == "OPTIONS":
             return await call_next(request)
@@ -581,6 +599,7 @@ async def auth_middleware(request: Request, call_next):
     
     # Validate token with auth service
     try:
+        logger.info(f"Validating token: {auth_header[:20]}...")
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(
                 f"{SERVICE_MAP['auth']}/me",
@@ -588,6 +607,7 @@ async def auth_middleware(request: Request, call_next):
             )
             
             if response.status_code != 200:
+                logger.error(f"Token validation failed: {response.status_code}")
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid or expired token"}
@@ -595,8 +615,6 @@ async def auth_middleware(request: Request, call_next):
     except Exception as e:
         logger.error(f"Error validating token: {str(e)}")
         # Continue if auth service is unreachable
-        # This prevents complete system lockout if auth service is down
-        # In production, you might want to enforce stricter validation
     
     # Continue with the request
     return await call_next(request)

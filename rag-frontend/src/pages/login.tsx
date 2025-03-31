@@ -34,42 +34,24 @@ const LoginPage: React.FC = () => {
     }
   }, [isAuthenticated, authLoading, router, returnUrl]);
 
-  // Handle login submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsLoading(true);
+    // In src/pages/login.tsx
 
-    // Form validation
-    if (!email.trim() || !password.trim()) {
-      setError('Email and password are required');
-      setIsLoading(false);
-      return;
-    }
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError(null);
+      setIsLoading(true);
 
-    try {
-      // Add debounce/throttling for security
-      await login(email, password);
-      // Redirect happens in useEffect
-    } catch (err) {
-      console.error('Login error:', err);
-      
-      // Secure error messages (don't expose too much info)
-      if (err instanceof Error) {
-        if (err.message.includes('rate limit') || err.message.includes('429')) {
-          setError('Too many login attempts. Please try again later.');
-        } else if (err.message.includes('401') || err.message.includes('unauthorized')) {
-          setError('Invalid email or password. Please check your credentials.');
-        } else {
-          setError('Login failed. Please try again.');
-        }
-      } else {
-        setError('An unexpected error occurred. Please try again.');
+      try {
+        console.log("Attempting login with email:", email);
+        await login(email, password);
+        router.push(returnUrl);
+      } catch (err) {
+        console.error('Login error:', err);
+        setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+      } finally {
+        setIsLoading(false);
       }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    };
 
   // Handle password reset request
   const handleResetRequest = async (e: React.FormEvent) => {

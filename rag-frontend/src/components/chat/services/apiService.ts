@@ -73,10 +73,10 @@ export const sendMessage = async (
   messages: Message[]
 ): Promise<ChatResponse> => {
   try {
-    console.log('Sending message:', content);
-    console.log('Thread ID:', threadId || 'new');
+    // Add this debug line
+    console.log('Using auth token:', localStorage.getItem('auth_token'));
     
-    // Format conversation history
+    // Format conversation history - keep this part from the original code
     const formattedMessages = messages.map(msg => ({
       role: msg.type === 'user' ? 'user' : 'assistant',
       content: msg.content,
@@ -91,7 +91,11 @@ export const sendMessage = async (
         attached_images: attachedImages,
         conversation_history: formattedMessages
       }, {
-        timeout: DEFAULT_TIMEOUT
+        timeout: DEFAULT_TIMEOUT,
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+          'X-CSRF-Token': localStorage.getItem('csrf_token') || ''
+        }
       });
       
       return response.data;
