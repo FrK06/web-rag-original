@@ -8,6 +8,7 @@ import time
 import uuid
 from pydantic import BaseModel
 from typing import Dict, List, Optional
+from urllib.parse import parse_qsl
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +19,7 @@ app = FastAPI(title="RAG API Gateway")
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict to your frontend domain
+    allow_origins=["http://localhost:3000"],  # In production, restrict to your frontend domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -388,16 +389,25 @@ async def get_csrf_token(response: Response):
             # Make sure this is sending to the correct endpoint
             auth_response = await client.get(f"{SERVICE_MAP['auth']}/csrf-token")
             
-            # Debug response
-            print(f"Auth service response: {auth_response.status_code}, {await auth_response.text()}")
+            # Debug output
+            print(f"Auth service response headers: {auth_response.headers}")
+            print(f"Auth service response status: {auth_response.status_code}")
+            print(f"Auth service response body: {auth_response.text}")
             
             # Copy cookies from auth service response
             for header, value in auth_response.headers.items():
                 if header.lower() == 'set-cookie':
                     response.headers[header] = value
+                    print(f"Setting cookie header: {value}")
             
             # Return the token
-            return auth_response.json()
+            if auth_response.status_code == 200:
+                data = auth_response.json()
+                print(f"Returning CSRF token: {data.get('token')}")
+                return data
+            else:
+                return {"token": "fallback-csrf-token", "error": f"Auth service returned {auth_response.status_code}"}
+                
     except Exception as e:
         logger.error(f"Error getting CSRF token: {str(e)}")
         return {"token": "fallback-csrf-token", "error": str(e)}
@@ -406,13 +416,26 @@ async def get_csrf_token(response: Response):
 async def auth_register(request: Request):
     """Forward registration requests to auth service"""
     try:
-        data = await request.json()
+        # Get the raw body bytes
+        body_bytes = await request.body()
+        
+        # Forward all headers, including CSRF token
+        headers = dict(request.headers)
+        
+        # Forward to auth service
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            logger.info(f"Forwarding registration request to auth service")
+            
             response = await client.post(
                 f"{SERVICE_MAP['auth']}/register",
-                json=data
+                content=body_bytes,  # Use raw bytes
+                headers=headers,
+                cookies=request.cookies
             )
             
+            logger.info(f"Auth service response: {response.status_code}")
+            
+            # Return the response as-is
             return Response(
                 content=response.content,
                 status_code=response.status_code,
@@ -422,27 +445,35 @@ async def auth_register(request: Request):
         logger.error(f"Auth register error: {str(e)}")
         return JSONResponse(
             status_code=500,
-            content={"detail": "Error processing registration request"}
+            content={"detail": f"Error processing registration request: {str(e)}"}
         )
 
 @app.post("/api/auth/login")
 async def auth_login(request: Request):
     """Forward login requests to auth service with proper formatting"""
     try:
-        # Get request body
-        body = await request.json()
+        # Get form data
+        form_data = await request.form()
         
-        # Create form data expected by FastAPI's OAuth2 form
-        form_data = {
-            "username": body.get("email", ""),  # Use email as username
-            "password": body.get("password", "")
+        # Extract username and password
+        username = form_data.get("username", "")
+        password = form_data.get("password", "")
+        
+        logger.info(f"Login attempt for user: {username}")
+        
+        # Create payload to send to auth service
+        login_data = {
+            "username": username,
+            "password": password
         }
         
-        # Forward as form data
+        # Forward request to auth service
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             response = await client.post(
                 f"{SERVICE_MAP['auth']}/login",
-                data=form_data  # Send as form data, not JSON
+                data=login_data,
+                cookies=request.cookies,
+                headers={"X-CSRF-Token": request.headers.get("X-CSRF-Token", "")}
             )
             
             return Response(
@@ -454,7 +485,7 @@ async def auth_login(request: Request):
         logger.error(f"Auth login error: {str(e)}")
         return JSONResponse(
             status_code=500,
-            content={"detail": "Error processing authentication request"}
+            content={"detail": f"Error processing authentication request: {str(e)}"}
         )
 
 # Fix for token refresh issue

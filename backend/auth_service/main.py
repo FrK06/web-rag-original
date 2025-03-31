@@ -50,7 +50,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # CORS configuration - restrict in production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict to your domain in production
+    allow_origins=["http://localhost:3000"],  # Restrict to your domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -231,7 +231,7 @@ async def health_check():
         }
 
 # Move the CSRF endpoint to the public router
-@public_router.get("/csrf-token", response_model=CSRFResponse)
+@app.get("/csrf-token", response_model=CSRFResponse)
 async def get_csrf_token(response: Response):
     """Get a new CSRF token"""
     logger.info("CSRF token endpoint called")
@@ -315,6 +315,9 @@ async def register(user_data: UserCreate):
 @app.post("/login", response_model=TokenResponse)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """Login with email and password"""
+    # Log attempt (use the form_data that FastAPI already parsed)
+    logger.info(f"Login attempt for: {form_data.username}")
+    
     # Authenticate user
     user = await authenticate_user(form_data.username, form_data.password)
     if not user:
@@ -323,12 +326,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Update last login timestamp
-    await users_collection.update_one(
-        {"_id": user["_id"]},
-        {"$set": {"last_login": datetime.utcnow()}}
-    )
     
     # Create tokens
     access_token = create_access_token(

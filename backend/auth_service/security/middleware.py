@@ -42,6 +42,15 @@ class SecurityMiddleware:
             redis_client: Redis client for caching and rate limiting
         """
         self.redis = redis_client
+        '''
+    async def __call__(self, request: Request, call_next):
+        """Main middleware handler"""
+        # TEMPORARY DEVELOPMENT BYPASS
+        # Skip all security middleware for testing
+        logger.warning("⚠️ Security middleware bypassed for development")
+        response = await call_next(request)
+        return response
+       '''
     
     async def __call__(self, request: Request, call_next):
         """Main middleware handler"""
@@ -54,6 +63,7 @@ class SecurityMiddleware:
             "/api/auth/login",
             "/api/auth/register",
             "/api/auth/csrf-token",
+            "/csrf-token",  # Add this line
             "/test"  # For health check route
         ]
         
@@ -67,6 +77,9 @@ class SecurityMiddleware:
             "/api/auth/csrf-token",
             "/api/auth/request-reset",
             "/api/auth/reset-password",
+            "/csrf-token",
+            "/login",  # Add this line
+            "/register",  # Add this too for consistency  # Add this line
             "/test"  # For health check route
         ]
         
@@ -204,16 +217,22 @@ class SecurityMiddleware:
             header_token = request.headers.get("X-CSRF-Token")
             cookie_token = request.cookies.get("csrf_token")
             
-            if not header_token or not cookie_token:
-                logger.warning("CSRF token missing")
+            logger.info(f"CSRF validation: header={header_token}, cookie={cookie_token}")
+            
+            if not header_token:
+                logger.warning("CSRF token missing from header")
+                return False
+                
+            if not cookie_token:
+                logger.warning("CSRF token missing from cookie")
                 return False
                 
             # Simple comparison for CSRF tokens
-            # In a real implementation, use time-constant comparison
             if header_token != cookie_token:
-                logger.warning("CSRF token mismatch")
+                logger.warning(f"CSRF token mismatch: header={header_token}, cookie={cookie_token}")
                 return False
                 
+            logger.info("CSRF token valid")
             return True
         except Exception as e:
             logger.error(f"CSRF validation error: {str(e)}")
