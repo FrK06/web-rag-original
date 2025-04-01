@@ -239,15 +239,13 @@ export const refreshToken = async (): Promise<{ accessToken: string }> => {
 // Logout function
 export const logoutUser = async (refreshToken: string): Promise<void> => {
   try {
-    // Get fresh CSRF token
-    await getCsrfToken();
-    
-    await apiClient.post('/api/auth/logout', { 
+    // Use the special client-logout endpoint that doesn't require auth
+    await apiClient.post('/api/auth/client-logout', { 
       refresh_token: refreshToken 
     });
   } catch (error) {
     console.error('Logout error:', error);
-    // We don't re-throw here to allow client-side logout to proceed
+    // Continue even if API call fails
   }
 };
 

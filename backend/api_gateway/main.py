@@ -9,6 +9,7 @@ import uuid
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 from urllib.parse import parse_qsl
+import json
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -19,21 +20,31 @@ app = FastAPI(title="RAG API Gateway")
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # In production, restrict to your frontend domain
+    allow_origins=[
+        "http://localhost:3000",
+        "http://192.168.1.101:3000",  # Your computer's IP
+    ],  # In production, restrict to your frontend domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 @app.middleware("http")
 async def add_cors_headers_to_error(request: Request, call_next):
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        # If an error occurs, create a JSON response
+        response = JSONResponse(
+            status_code=500,
+            content={"detail": str(e)}
+        )
     
     # Add CORS headers to all responses including errors
-    if request.headers.get("origin"):
-        response.headers["Access-Control-Allow-Origin"] = request.headers["origin"]
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-Token"
+    origin = request.headers.get("origin", "http://localhost:3000")
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-Token"
     
     return response
 # Service URLs - configurable through environment variables
@@ -202,21 +213,42 @@ async def speech_to_text_endpoint(audio_data: AudioData):
         )
 
 @app.post("/api/text-to-speech/")
-async def text_to_speech_endpoint(request: TTSRequest):
+async def text_to_speech_endpoint(request: Request):
     """Forward text-to-speech requests to multimedia service"""
-    async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-        response = await client.post(
-            f"{SERVICE_MAP['multimedia']}/text-to-speech",
-            json={"text": request.text, "voice": request.voice},
-            headers={"Authorization": request.headers.get("Authorization")}
-        )
+    try:
+        # Parse the request body manually
+        data = await request.json()
+        text = data.get("text", "")
+        voice = data.get("voice", "alloy")
         
-        # Ensure proper content-type for audio response
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            media_type="application/json"  # Keep this as JSON since we're returning structured data
-        )
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.post(
+                f"{SERVICE_MAP['multimedia']}/text-to-speech",
+                json={"text": text, "voice": voice}
+            )
+            
+            content = response.content
+            status_code = response.status_code
+            media_type = response.headers.get("content-type", "application/json")
+    except Exception as e:
+        logger.error(f"Error in text-to-speech: {str(e)}")
+        content = json.dumps({"error": str(e)}).encode()
+        status_code = 500
+        media_type = "application/json"
+    
+    # Create response with proper CORS headers
+    resp = Response(
+        content=content,
+        status_code=status_code,
+        media_type=media_type
+    )
+    
+    # Add CORS headers directly to this response
+    origin = request.headers.get("origin", "http://localhost:3000") 
+    resp.headers["Access-Control-Allow-Origin"] = origin
+    resp.headers["Access-Control-Allow-Credentials"] = "true"
+    
+    return resp
 
 @app.post("/api/direct-image-generation/")
 async def direct_image_generation_endpoint(request: Request):
@@ -547,6 +579,35 @@ async def auth_logout(request: Request):
             status_code=response.status_code,
             media_type=response.headers.get("content-type", "application/json")
         )
+    
+@app.post("/api/auth/client-logout")
+async def client_logout(request: Request):
+    """Special endpoint for client-side logout that doesn't require authentication"""
+    try:
+        data = await request.json()
+        
+        # Try to revoke the token server-side but don't require success
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"{SERVICE_MAP['auth']}/logout",
+                    json=data
+                )
+        except Exception as e:
+            logger.error(f"Error forwarding logout: {str(e)}")
+            # Ignore errors from auth service
+            pass
+            
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "message": "Logged out successfully"}
+        )
+    except Exception as e:
+        # Always return success
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "message": "Logged out successfully"}
+        )    
 
 @app.get("/api/auth/me")
 async def auth_me(request: Request):

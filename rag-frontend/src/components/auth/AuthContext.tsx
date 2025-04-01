@@ -237,34 +237,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Logout function
   const logout = useCallback(async (): Promise<void> => {
-    setIsLoading(true);
-    try {
-      // Try to inform the server, but don't wait too long
-      const refreshTokenValue = localStorage.getItem('refresh_token');
-      if (refreshTokenValue) {
-        await Promise.race([
-          logoutUser(refreshTokenValue),
-          new Promise(resolve => setTimeout(resolve, 2000)) // 2s max
-        ]);
-      }
-    } catch (error) {
-      console.error("Logout API error:", error);
-      // Continue with local logout even if API fails
-    } finally {
-      // Clear local auth state
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('refresh_token');
-      setUser(null);
-      
-      // Clear refresh timer
-      if (refreshTimeout) {
-        clearTimeout(refreshTimeout);
-        setRefreshTimeout(null);
-      }
-      
-      setIsLoading(false);
-      router.push('/login');
+    // Immediately clear auth state
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('refresh_token');
+    setUser(null);
+    
+    // Clear refresh timer
+    if (refreshTimeout) {
+      clearTimeout(refreshTimeout);
+      setRefreshTimeout(null);
     }
+    
+    // No server-side logout needed for now
+    setIsLoading(false);
+    router.push('/login');
   }, [refreshTimeout, router]);
 
   // Password reset request
