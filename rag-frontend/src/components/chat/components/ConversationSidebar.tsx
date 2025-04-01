@@ -42,13 +42,17 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
       setIsLoading(true);
       setError(null);
       
+      // Get auth token from localStorage
+      const token = localStorage.getItem('auth_token');
+      console.log("Loading conversations with token:", token ? token.substring(0, 15) + "..." : "none");
+      
       try {
+        // Pass auth token in request headers
         const conversationsData = await getConversations();
         setThreads(conversationsData.threads || []);
       } catch (err) {
         console.error('Error loading conversations:', err);
         setError('Failed to load conversations. Please try again later.');
-        // Set empty threads array instead of leaving previous state
         setThreads([]);
       }
     } finally {

@@ -1,199 +1,231 @@
-// rag-frontend/src/components/auth/authService.ts
+// src/components/auth/authService.ts
 import axios from 'axios';
 import { User } from './AuthContext';
 
+// API configuration
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_TIMEOUT = 30000; // 30 seconds
 
-// Axios instance with authentication header
-const authAxios = axios.create({
-  baseURL: API_URL
+// Create an axios instance with defaults
+const apiClient = axios.create({
+  baseURL: API_URL,
+  timeout: API_TIMEOUT,
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  withCredentials: true // Important for CSRF protection with cookies
 });
 
 // Add auth token to requests if available
-authAxios.interceptors.request.use(
+// Request interceptor
+apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('auth_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Also add CSRF token
+    const csrfToken = localStorage.getItem('csrf_token');
+    if (csrfToken) {
+      config.headers['X-CSRF-Token'] = csrfToken;
+    }
+    
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Handle 401 responses
-authAxios.interceptors.response.use(
+// Response interceptor for error handling
+apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    if (error.response && error.response.status === 401 && !originalRequest._retry) {
+    
+    // Handle token expiration
+    if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
+      
       try {
         // Try to refresh token
         await refreshToken();
-        // Retry the original request
-        const token = localStorage.getItem('auth_token');
-        originalRequest.headers.Authorization = `Bearer ${token}`;
-        return authAxios(originalRequest);
+        
+        // Update the auth header with the new token
+        const newToken = localStorage.getItem('auth_token');
+        if (newToken) {
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return apiClient(originalRequest);
+        }
       } catch (refreshError) {
-        // Refresh failed, redirect to login
+        // If refresh fails, clear token and redirect to login
         localStorage.removeItem('auth_token');
         localStorage.removeItem('refresh_token');
-        return Promise.reject(refreshError);
+        window.location.href = '/login';
       }
     }
+    
+    // Enhance security errors with useful messages
+    if (error.response?.status === 403) {
+      error.message = 'Access denied. Please check your permissions.';
+    } else if (error.response?.status === 429) {
+      error.message = 'Too many requests. Please try again later.';
+    }
+    
     return Promise.reject(error);
   }
 );
 
-// Authentication API calls
+// Response types
 export interface AuthResponse {
   user: User;
-  token: string;
-  refreshToken: string;
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
 }
 
-export const loginUser = async (email: string, password: string): Promise<AuthResponse> => {
+export interface TokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+}
+
+// Fetch a CSRF token
+export const getCsrfToken = async (): Promise<string> => {
   try {
-    console.log(`Attempting login for: ${email}`);
+    const response = await apiClient.get('/api/auth/csrf-token');
+    const token = response.data.token;
     
-    // Send credentials as JSON (API Gateway will convert to form data)
-    const response = await axios.post(`${API_URL}/api/auth/login`, {
-      email,
-      password
-    });
+    // Store in localStorage for use in requests
+    localStorage.setItem('csrf_token', token);
     
-    console.log('Login response received:', response.status);
-    return response.data;
+    // Update the default headers with the new CSRF token
+    apiClient.defaults.headers.common['X-CSRF-Token'] = token;
+    
+    console.log("CSRF token fetched and stored:", token);
+    
+    return token;
   } catch (error) {
-    console.error('Login error details:', error);
-    
-    if (axios.isAxiosError(error)) {
-      if (error.response) {
-        console.error('Server response:', error.response.status, error.response.data);
-        
-        // Extract meaningful error message
-        const errorMessage = 
-          error.response.data?.detail || 
-          error.response.data?.message || 
-          (error.response.status === 401 ? 'Invalid email or password' : 'Login failed');
-        
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        console.error('No response received from server');
-        throw new Error('Server not responding. Please try again later.');
-      } else {
-        console.error('Request setup error:', error.message);
-        throw new Error(`Network error: ${error.message}`);
-      }
-    }
-    
-    throw new Error('Login failed. Please try again.');
+    console.error('Failed to get CSRF token:', error);
+    return '';
   }
 };
 
-export const registerUser = async (name: string, email: string, password: string): Promise<AuthResponse> => {
+// Login function with proper form data
+export const loginUser = async (
+  email: string, 
+  password: string
+): Promise<{ user: User; token: string; refreshToken: string }> => {
   try {
-    console.log(`Attempting registration for: ${email}`);
+    // Step 1: Get CSRF token explicitly
+    await getCsrfToken();
     
-    const response = await axios.post(`${API_URL}/api/auth/register`, {
+    console.log("Sending login request with credentials:", { email });
+    
+    // Step 2: Create form data
+    const formData = new FormData();
+    formData.append('username', email);
+    formData.append('password', password);
+    
+    // Step 3: Make login request with proper content type
+    const response = await apiClient.post('/api/auth/login', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-CSRF-Token': localStorage.getItem('csrf_token') || ''
+      }
+    });
+    
+    console.log("Login successful, storing tokens");
+    
+    // Step 4: Return the response data
+    return {
+      user: response.data.user,
+      token: response.data.access_token,
+      refreshToken: response.data.refresh_token
+    };
+  } catch (error) {
+    console.error('Login error details:', error);
+    
+    // Throw a more user-friendly error
+    throw new Error(
+      error instanceof Error ? 
+        error.message : 
+        'Login failed. Please check your credentials and try again.'
+    );
+  }
+};
+
+// Registration function with CSRF token
+export const registerUser = async (
+  name: string, 
+  email: string, 
+  password: string
+): Promise<{ user: User; token: string; refreshToken: string }> => {
+  try {
+    // Step 1: Get CSRF token first
+    await getCsrfToken();
+    
+    // Step 2: Make the registration request
+    const response = await apiClient.post<AuthResponse>('/api/auth/register', {
       name,
       email,
       password
     });
     
-    console.log('Registration response received:', response.status);
-    return response.data;
+    return {
+      user: response.data.user,
+      token: response.data.access_token,
+      refreshToken: response.data.refresh_token
+    };
   } catch (error) {
     console.error('Registration error details:', error);
     
-    if (axios.isAxiosError(error)) {
-      if (error.response) {
-        console.error('Server response:', error.response.status, error.response.data);
-        
-        // Check for common registration errors
-        if (error.response.status === 400) {
-          if (error.response.data?.detail?.includes('Email already registered')) {
-            throw new Error('This email is already registered. Please use a different email.');
-          }
-        }
-        
-        const errorMessage = 
-          error.response.data?.detail || 
-          error.response.data?.message || 
-          'Registration failed';
-        
-        throw new Error(errorMessage);
-      } else if (error.request) {
-        throw new Error('Server not responding. Please try again later.');
-      } else {
-        throw new Error(`Network error: ${error.message}`);
+    if (axios.isAxiosError(error) && error.response) {
+      const errorData = error.response.data;
+      
+      // Return specific error messages for common registration issues
+      if (error.response.status === 400 && errorData?.detail?.includes('already registered')) {
+        throw new Error('This email is already registered');
+      } else if (errorData?.detail) {
+        throw new Error(errorData.detail);
       }
     }
     
-    throw new Error('Registration failed. Please try again later.');
+    throw new Error('Registration failed. Please try again later');
   }
 };
 
-export const logoutUser = async (): Promise<void> => {
-  try {
-    const refreshToken = localStorage.getItem('refresh_token');
-    if (!refreshToken) return;
-    
-    await authAxios.post(`${API_URL}/api/auth/logout`, { refresh_token: refreshToken });
-  } catch (error) {
-    console.error('Logout error:', error);
-    // Continue with local logout even if API call fails
-  }
-};
-
-export const getCurrentUser = async (): Promise<User> => {
-  try {
-    const response = await authAxios.get(`${API_URL}/api/auth/me`);
-    return response.data.user || response.data;
-  } catch (error) {
-    console.error('Get current user error:', error);
-    throw error;
-  }
-};
-
-// refreshToken function
-export const refreshToken = async (): Promise<void> => {
-  const refreshToken = localStorage.getItem('refresh_token');
-  if (!refreshToken) {
+// Token refresh function
+export const refreshToken = async (): Promise<{ accessToken: string }> => {
+  const refreshTokenValue = localStorage.getItem('refresh_token');
+  
+  if (!refreshTokenValue) {
     throw new Error('No refresh token available');
   }
   
   try {
-    console.log("Attempting to refresh token");
-    const response = await axios.post(`${API_URL}/api/auth/refresh`, {
-      refresh_token: refreshToken  // Make sure this key matches what the backend expects
+    // First, get a fresh CSRF token
+    await getCsrfToken();
+    
+    // Send the refresh token request
+    const response = await apiClient.post<TokenResponse>('/api/auth/refresh', {
+      refresh_token: refreshTokenValue
     });
     
-    console.log("Token refresh response:", response.status);
+    // Store the new tokens
+    localStorage.setItem('auth_token', response.data.access_token);
     
-    // Check all possible response fields
-    const accessToken = response.data.access_token || 
-                       response.data.token || 
-                       "";
-                       
-    const newRefreshToken = response.data.refresh_token || 
-                           response.data.refreshToken || 
-                           refreshToken;  // Use old token if new one not provided
-    
-    if (accessToken) {
-      localStorage.setItem('auth_token', accessToken);
-      console.log("Access token updated");
+    // Only update refresh token if provided
+    if (response.data.refresh_token) {
+      localStorage.setItem('refresh_token', response.data.refresh_token);
     }
     
-    if (newRefreshToken !== refreshToken) {
-      localStorage.setItem('refresh_token', newRefreshToken);
-      console.log("Refresh token updated");
-    }
+    return {
+      accessToken: response.data.access_token
+    };
   } catch (error) {
-    console.error("Token refresh failed:", error);
+    console.error('Token refresh failed:', error);
     
-    // Only clear tokens on certain errors
+    // Clear tokens on certain errors
     if (axios.isAxiosError(error) && error.response && 
         (error.response.status === 401 || error.response.status === 403)) {
       localStorage.removeItem('auth_token');
@@ -204,4 +236,71 @@ export const refreshToken = async (): Promise<void> => {
   }
 };
 
-export { authAxios };
+// Logout function
+export const logoutUser = async (refreshToken: string): Promise<void> => {
+  try {
+    // Use the special client-logout endpoint that doesn't require auth
+    await apiClient.post('/api/auth/client-logout', { 
+      refresh_token: refreshToken 
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Continue even if API call fails
+  }
+};
+
+// Get current user info
+export const getCurrentUser = async (): Promise<User> => {
+  try {
+    const response = await apiClient.get('/api/auth/me');
+    return response.data;
+  } catch (error) {
+    console.error('Get current user error:', error);
+    throw error;
+  }
+};
+
+// Password reset request
+export const requestPasswordReset = async (email: string): Promise<void> => {
+  try {
+    // Get fresh CSRF token
+    await getCsrfToken();
+    
+    await apiClient.post('/api/auth/request-reset', { email });
+  } catch (error) {
+    console.error('Password reset request error:', error);
+    // Don't expose whether email exists or not
+    throw new Error('Error processing request');
+  }
+};
+
+// Confirm password reset
+export const resetPassword = async (
+  token: string, 
+  newPassword: string
+): Promise<void> => {
+  try {
+    // Get fresh CSRF token
+    await getCsrfToken();
+    
+    await apiClient.post('/api/auth/reset-password', {
+      token,
+      new_password: newPassword
+    });
+  } catch (error) {
+    console.error('Password reset error:', error);
+    
+    if (axios.isAxiosError(error) && error.response) {
+      if (error.response.status === 400) {
+        throw new Error('Invalid or expired token');
+      } else if (error.response.data?.detail) {
+        throw new Error(error.response.data.detail);
+      }
+    }
+    
+    throw new Error('Failed to reset password');
+  }
+};
+
+// Export the api client for use in other modules
+export { apiClient };

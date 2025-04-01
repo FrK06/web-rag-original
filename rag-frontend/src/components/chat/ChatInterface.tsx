@@ -19,6 +19,7 @@ import ToolBar from './components/ToolBar';
 import ChatInput from './components/ChatInput';
 import ImageModal from './components/ImageModal';
 import ConversationSidebar from './components/ConversationSidebar';
+import ReasoningTest from './components/ReasoningTest';
 
 interface ChatInterfaceProps {
   userName?: string;
@@ -278,26 +279,110 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userName }) => {
   };
 
   // Play text-to-speech audio
-  const playAudio = async (text: string, messageIndex?: number) => {
+  // In ChatInterface.tsx
+// In ChatInterface.tsx - Update the playAudio function
+const cleanupAudio = (audio: HTMLAudioElement | null) => {
+  if (!audio) return;
+  
+  try {
+    // Remove all event listeners first
+    audio.onended = null;
+    audio.onerror = null;
+    audio.oncanplay = null;
+    audio.oncanplaythrough = null;
+    
+    // Pause and reset
+    audio.pause();
+    audio.currentTime = 0;
+    audio.src = '';
+    
+    // Force browser to forget about this element
+    audio.load();
+  } catch (e) {
+    console.log("Cleanup error:", e);
+  }
+};
+
+// Add this function to ChatInterface.tsx
+const playAudioFallback = (text: string): boolean => {
+  try {
+    // Check if browser supports speech synthesis
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); // Cancel any current speech
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      
+      window.speechSynthesis.speak(utterance);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error("Browser TTS fallback error:", error);
+    return false;
+  }
+};
+
+const playAudio = async (text: string, messageIndex?: number) => {
+  try {
+    // Stop any currently playing audio
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.src = '';
+      setCurrentAudio(null);
+    }
+    
+    setIsSpeaking(true);
+    setError(null); // Clear any previous errors
+    
+    // Get audio data from API
+    let audioUrl: string | undefined;
     try {
-      // Stop any currently playing audio
-      if (currentAudio) {
-        currentAudio.pause();
+      audioUrl = await getTextToSpeech(text);
+      console.log("Raw audio response:", audioUrl ? audioUrl.substring(0, 30) + "..." : "none");
+      
+      if (!audioUrl) {
+        throw new Error("No audio data received");
       }
       
-      setIsSpeaking(true);
+      // Create audio element with more robust error handling
+      const audio = new Audio();
       
-      // Get audio data
-      const audioUrl = await getTextToSpeech(text);
+      // Create a promise to handle the audio loading
+      const audioLoadPromise = new Promise<boolean>((resolve) => {
+        // Add success handler
+        audio.oncanplaythrough = () => {
+          resolve(true);
+        };
+        
+        // Add error handler that doesn't throw
+        audio.onerror = (e) => {
+          console.error("Audio error:", e);
+          // Don't reject, just log - this prevents the error from bubbling up
+          resolve(false); // Resolve with false to indicate there was an error
+        };
+      });
       
-      // Create and play audio element
-      const audio = new Audio(audioUrl);
+      // Set the source
+      audio.src = audioUrl;
+      audio.load(); // Explicitly load
       setCurrentAudio(audio);
       
-      // Play audio
-      await audio.play();
+      // Wait for audio to be ready
+      await audioLoadPromise;
       
-      // If messageIndex is provided, update the message with the audio URL
+      // Try to play (this might still work even if the above had an error)
+      try {
+        await audio.play();
+      } catch (playError) {
+        // Ignore play errors - the audio might still play
+        console.log("Audio play error (can be ignored if audio works):", playError);
+      }
+      
+      // If messageIndex is provided, update the message with audio URL
       if (messageIndex !== undefined) {
         setMessages(prev => 
           prev.map((msg, idx) => 
@@ -312,22 +397,28 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userName }) => {
         setCurrentAudio(null);
       };
       
-    } catch (error) {
-      console.error('Error playing audio:', error);
-      setError('Failed to play audio. Please try again.');
-      setIsSpeaking(false);
+    } catch (apiError) {
+      console.error('API TTS error:', apiError);
+      
+      // Try browser TTS fallback
+      if (!playAudioFallback(text)) {
+        throw new Error('Both API and browser TTS failed');
+      }
     }
-  };
-
-  // Stop text-to-speech audio
-  const stopAudio = () => {
-    if (currentAudio) {
-      currentAudio.pause();
-      currentAudio.src = '';
-      setCurrentAudio(null);
-    }
+    
+  } catch (error) {
+    console.error('All audio playback methods failed:', error);
+    setError('Audio playback unavailable');
     setIsSpeaking(false);
-  };
+  }
+};
+
+// Also update the stopAudio function
+const stopAudio = () => {
+  cleanupAudio(currentAudio);
+  setCurrentAudio(null);
+  setIsSpeaking(false);
+};
 
   // Open image modal
   const openImageModal = (imageUrl: string) => {
@@ -407,6 +498,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userName }) => {
 
     try {
       const response = await sendMessage(messageContent, threadId, mode, attachedImages, messages);
+      console.log("API Response:", {
+        message: response.message?.substring(0, 50) + "...",
+        hasReasoning: Boolean(response.reasoning),
+        reasoningPreview: response.reasoning?.substring(0, 50) + "...",
+        isReasoningSameAsMessage: response.reasoning === response.message
+      });
       
       // Set thread ID if returned
       if (response.thread_id) {
@@ -435,13 +532,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userName }) => {
           ? response.image_urls[0] 
           : undefined;
         
-        // Add assistant response
-        const assistantResponse = {
+        // Add assistant response with reasoning if available
+        const assistantResponse: Message = {
           type: 'assistant',
           content: response.message,
           timestamp: response.timestamp || new Date().toLocaleTimeString(),
-          imageUrl: imageUrl // Include the image URL if available
+          imageUrl: imageUrl, // Include the image URL if available
+          reasoning: response.reasoning, // Include reasoning from backend
+          reasoningTitle: response.reasoning_title || "Reasoning Completed",
+          isReasoningComplete: true
         };
+        
+        console.log("Adding assistant response:", {
+          content: assistantResponse.content?.substring(0, 50) + "...",
+          hasReasoning: Boolean(assistantResponse.reasoning),
+          reasoningPreview: assistantResponse.reasoning?.substring(0, 50) + "..."
+        });
         
         setMessages(prev => [...prev, assistantResponse]);
 
@@ -525,6 +631,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userName }) => {
         onShowSidebar={() => setSidebarOpen(true)}
         userName={userName}
       />
+
+      {/* Add the test component right here */}
+      <ReasoningTest />
 
       {/* Messages Area */}
       <MessagesContainer 

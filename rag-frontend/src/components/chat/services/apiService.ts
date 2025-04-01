@@ -10,12 +10,19 @@ import {
   ImageProcessingResponse
 } from '../types';
 
-// API base URL - can be configured via environment variable
+// API configuration
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-// Default timeout and retry settings
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
 const DEFAULT_MAX_RETRIES = 3;
+
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('auth_token');
+  return {
+    'Authorization': token ? `Bearer ${token}` : '',
+    'X-CSRF-Token': localStorage.getItem('csrf_token') || ''
+  };
+};
 
 // Helper function to implement retry logic
 async function withRetry<T>(
@@ -73,8 +80,7 @@ export const sendMessage = async (
   messages: Message[]
 ): Promise<ChatResponse> => {
   try {
-    console.log('Sending message:', content);
-    console.log('Thread ID:', threadId || 'new');
+    console.log('Sending message with auth token:', localStorage.getItem('auth_token') ? 'present' : 'missing');
     
     // Format conversation history
     const formattedMessages = messages.map(msg => ({
@@ -89,9 +95,12 @@ export const sendMessage = async (
         thread_id: threadId,
         mode,
         attached_images: attachedImages,
-        conversation_history: formattedMessages
+        conversation_history: formattedMessages,
+        include_reasoning: true  // Add this flag to request reasoning from backend
       }, {
-        timeout: DEFAULT_TIMEOUT
+        timeout: DEFAULT_TIMEOUT,
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       return response.data;
@@ -125,7 +134,9 @@ export const processSpeech = async (audioBlob: Blob): Promise<string> => {
       const response = await axios.post<SpeechToTextResponse>(`${API_URL}/api/speech-to-text/`, {
         audio: base64Audio
       }, {
-        timeout: 60000 // Speech processing might take longer
+        timeout: 60000, // Speech processing might take longer
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -140,16 +151,40 @@ export const processSpeech = async (audioBlob: Blob): Promise<string> => {
   }
 };
 
+// In apiService.ts
 export const getTextToSpeech = async (text: string): Promise<string> => {
   try {
     return await withRetry(async () => {
       const response = await axios.post<TextToSpeechResponse>(`${API_URL}/api/text-to-speech/`, {
         text,
-        voice: 'alloy' // Can be customized later
+        voice: 'alloy'
+      }, {
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
-        return response.data.audio; // Base64 encoded audio with data URL prefix
+        // Fix the base64 format
+        const audioData = response.data.audio;
+        console.log("Raw audio response:", audioData?.substring(0, 30));
+        
+        // Properly format the data URL
+        if (audioData) {
+          // If it already has correct data URL prefix, return as is
+          if (audioData.startsWith('data:audio/mp3;base64,')) {
+            return audioData;
+          }
+          
+          // If it has incorrect double slash format, fix it
+          if (audioData.startsWith('data:audio/mp3;base64//')) {
+            return audioData.replace('data:audio/mp3;base64//', 'data:audio/mp3;base64,');
+          }
+          
+          // If it's just raw base64, add the prefix
+          return `data:audio/mp3;base64,${audioData}`;
+        }
+        
+        throw new Error('No audio data in response');
       } else {
         throw new Error('Failed to generate speech');
       }
@@ -170,7 +205,9 @@ export const generateImageDirectly = async (prompt: string): Promise<string> => 
         style: 'vivid',
         quality: 'standard'
       }, {
-        timeout: 60000 // Image generation can take longer
+        timeout: 60000, // Image generation can take longer
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -194,7 +231,9 @@ export const generateImage = async (prompt: string): Promise<string> => {
         style: 'vivid',
         quality: 'standard'
       }, {
-        timeout: 60000
+        timeout: 60000,
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -214,6 +253,9 @@ export const analyzeImage = async (imageData: string): Promise<string> => {
     return await withRetry(async () => {
       const response = await axios.post<ImageAnalysisResponse>(`${API_URL}/api/analyze-image/`, {
         image: imageData
+      }, {
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -234,6 +276,9 @@ export const processImage = async (imageData: string, operation: string): Promis
       const response = await axios.post<ImageProcessingResponse>(`${API_URL}/api/process-image/`, {
         image: imageData,
         operation: operation
+      }, {
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       
       if (response.data.status === 'success') {
@@ -280,9 +325,13 @@ export interface ThreadHistoryResponse {
  */
 export const getConversations = async (): Promise<ConversationsResponse> => {
   try {
+    console.log("Fetching conversations with auth token:", localStorage.getItem('auth_token') ? 'present' : 'missing');
+    
     return await withRetry(async () => {
       const response = await axios.get<ConversationsResponse>(`${API_URL}/api/conversations/`, {
-        timeout: 10000
+        timeout: 10000,
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       return response.data;
     });
@@ -299,7 +348,10 @@ export const getConversations = async (): Promise<ConversationsResponse> => {
 export const getConversationHistory = async (threadId: string): Promise<ThreadHistoryResponse> => {
   try {
     return await withRetry(async () => {
-      const response = await axios.get<ThreadHistoryResponse>(`${API_URL}/api/conversations/${threadId}`);
+      const response = await axios.get<ThreadHistoryResponse>(`${API_URL}/api/conversations/${threadId}`, {
+        headers: getAuthHeaders(),
+        withCredentials: true
+      });
       return response.data;
     });
   } catch (error) {
@@ -314,7 +366,10 @@ export const getConversationHistory = async (threadId: string): Promise<ThreadHi
 export const deleteConversation = async (threadId: string): Promise<{status: string}> => {
   try {
     return await withRetry(async () => {
-      const response = await axios.delete(`${API_URL}/api/conversations/${threadId}`);
+      const response = await axios.delete(`${API_URL}/api/conversations/${threadId}`, {
+        headers: getAuthHeaders(),
+        withCredentials: true
+      });
       return response.data;
     });
   } catch (error) {
@@ -331,6 +386,9 @@ export const renameConversation = async (threadId: string, newName: string): Pro
     return await withRetry(async () => {
       const response = await axios.put(`${API_URL}/api/conversations/${threadId}/rename`, {
         name: newName
+      }, {
+        headers: getAuthHeaders(),
+        withCredentials: true
       });
       return response.data;
     });

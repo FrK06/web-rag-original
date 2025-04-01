@@ -23,7 +23,7 @@ app = FastAPI(title="LLM Orchestration Service")
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,6 +57,7 @@ class ProcessRequest(BaseModel):
     image_context: Optional[str] = None
     attached_images: List[str] = []
     project_context: Optional[Dict[str, Any]] = None
+    include_reasoning: bool = False  # Add this field
 
 @app.on_event("startup")
 async def startup_event():
@@ -169,7 +170,8 @@ def create_system_prompt(
     conversation_history: List[Dict[str, Any]],
     image_context: Optional[str] = None,
     project_context: Optional[Dict[str, Any]] = None,
-    thread_id: Optional[str] = None
+    thread_id: Optional[str] = None,
+    for_reasoning: bool = False  # Add this parameter to create different prompts for reasoning vs response
 ) -> str:
     """Create a comprehensive system prompt for the LLM with enhanced memory support
     
@@ -180,24 +182,50 @@ def create_system_prompt(
         image_context: Optional context from analyzed images
         project_context: Optional project-specific context
         thread_id: Optional thread identifier for conversation tracking
+        for_reasoning: Whether this prompt is for the reasoning step (vs. final response)
         
     Returns:
         A formatted system prompt with full context
     """
     # Base system prompt
-    base_prompt = """You are a helpful assistant that can search the web, extract information from websites, communicate via SMS/phone calls, and work with images.
+    if for_reasoning:
+        # Reasoning-specific prompt
+        base_prompt = """You are an AI assistant tasked with thinking step-by-step before responding.
+
+IMPORTANT REASONING INSTRUCTIONS:
+1. Analyze the user's query thoroughly to understand what they're asking.
+2. Break down your thought process in a structured way.
+3. Consider different approaches or perspectives to answer the question.
+4. Identify any assumptions you're making.
+5. Think about what information you need to provide a complete answer.
+6. DO NOT provide the final response yet - focus ONLY on your reasoning process.
+7. Structure your reasoning as a step-by-step analysis.
+
+When analyzing date or time queries:
+1. The current date is {current_date} and it's {current_day_of_week}
+2. Show your calculation process for any date-related reasoning
+
+Your reasoning should be detailed enough that someone following along could understand your thinking process.
+"""
+    else:
+        # Response-specific prompt
+        base_prompt = """You are a helpful assistant that can search the web, extract information from websites, communicate via SMS/phone calls, and work with images.
+
+When providing your final response:
+1. Be clear, concise, and direct in answering the user's question.
+2. Your answer should be straightforward and focused on what the user asked.
+3. DO NOT repeat your reasoning process - the user has already seen that.
+4. DO NOT say "Based on my reasoning" or reference your thinking process.
+5. Just give the answer in a natural, conversational way.
 
 When asked about date, time, or day of week:
 1. The current date is {current_date} and it's {current_day_of_week}
 2. Use this information directly - do not use tools for this
 
 When asked about recent events, news, or releases:
-1. ALWAYS use the search_web tool first with a date-specific search (include "2025" or "this week" or "latest")
+1. Always use the search_web tool first with a date-specific search
 2. Then use scrape_webpage to get the full content from the most recent relevant results
 3. Only provide information from what you find in the actual search results
-4. If you can't find current information, say "I need to search for the most up-to-date information about this" and then search again
-5. Never reference old information or make assumptions about dates
-6. Always include the source and date of the information you found
 
 Conversation thread ID: {thread_id}
 """
@@ -211,7 +239,7 @@ Conversation thread ID: {thread_id}
     )
     
     # Add image-specific instructions if image context is provided
-    if image_context:
+    if image_context and not for_reasoning:
         image_prompt = """
 When working with images:
 1. If asked to describe or analyze an image, use the analyze_image tool to get detailed information about image contents
@@ -224,8 +252,9 @@ Image Context:
 {image_context}"""
         base_prompt += image_prompt.format(image_context=image_context)
 
-    # Add tool usage guidance
-    tools_prompt = """
+    # Add tool usage guidance for the response prompt
+    if not for_reasoning:
+        tools_prompt = """
 For questions about:
 - Recent AI/LLM releases: specifically search AI news websites and include "2025" in the search
 - Current events: always include the current month and year in the search
@@ -233,7 +262,7 @@ For questions about:
 - When users request notifications, use send_sms or make_call to follow up.
 - When users want to hear information, use speak_text to convert your response to audio
 - When users want images created, use generate_image to create visuals based on descriptions"""
-    base_prompt += tools_prompt
+        base_prompt += tools_prompt
 
     # Add memory-specific instructions to improve context retention
     memory_prompt = """
@@ -331,8 +360,9 @@ Reference prior exchanges when answering and maintain continuity of thought.
     
     base_prompt += context_prompt
 
-    # Add explicit message structure instructions
-    message_prompt = """
+    # Add explicit message structure instructions for the final response
+    if not for_reasoning:
+        message_prompt = """
 IMPORTANT FORMATTING INSTRUCTIONS:
 1. When presenting search results, always format them in a structured way:
    - Start with a comprehensive summary of your findings
@@ -346,7 +376,14 @@ IMPORTANT FORMATTING INSTRUCTIONS:
 
 3. Format code blocks with language-specific syntax highlighting.
 """
-    base_prompt += message_prompt
+        base_prompt += message_prompt
+    else:
+        # Extra instruction for reasoning prompt
+        base_prompt += """
+IMPORTANT: This is ONLY your reasoning step. The user will see this before your final answer.
+Focus on explaining your thought process clearly and breaking down how you're approaching their question.
+DO NOT provide the final answer here - you'll give that separately.
+"""
 
     return base_prompt
 
@@ -710,61 +747,93 @@ async def process_query(request: ProcessRequest):
                 logger.error(f"Error handling SMS request: {str(e)}")
                 # Continue with regular processing if direct handling fails
     
-    # Check for call request
-    call_match = re.search(r"(call|phone|dial) (.*?)(?::|\.|\?|$)", request.query.lower())
-    if call_match:
-        recipient = call_match.group(2).strip()
-        # Extract message for the call
-        message_match = re.search(r'"([^"]*)"', request.query)
-        message = message_match.group(1) if message_match else "This is an automated call from the RAG Assistant."
-        
-        try:
-            logger.info(f"Detected call request to: {recipient}")
-            async with httpx.AsyncClient() as client:
-                call_response = await client.post(
-                    f"{SERVICE_MAP['notification']}/make-call",
-                    json={
-                        "recipient": recipient,
-                        "message": message
-                    }
-                )
-                
-                if call_response.status_code == 200:
-                    result = call_response.json()
-                    
-                    # Create a response
-                    response = {
-                        "message": f"✅ Call initiated to {recipient} with message: '{message}'.",
-                        "tools_used": ["call"],
-                        "status": "success",
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    
-                    # Cache result
-                    if redis_client:
-                        await redis_client.set(
-                            cache_key,
-                            json.dumps(response),
-                            ex=DEFAULT_CACHE_TTL
-                        )
-                    
-                    return response
-        except Exception as e:
-            logger.error(f"Error handling call request: {str(e)}")
-            # Continue with regular processing if direct handling fails
+    # Check for call request - similar special cases
     
     try:
-        # Create system prompt with full conversation history
+        # Format full conversation history - don't truncate it
+        formatted_history = format_conversation_history(request.conversation_history)
+        
+        # Check if reasoning is requested
+        include_reasoning = getattr(request, 'include_reasoning', False)
+        
+        # Initialize reasoning variables
+        reasoning_output = ""
+        reasoning_title = "Reasoning Completed"
+        
+        # First: Get reasoning step (if requested)
+        if include_reasoning:
+            # Create a separate system prompt for reasoning
+            reasoning_system_prompt = create_system_prompt(
+                query=request.query,
+                mode=request.mode,
+                conversation_history=request.conversation_history,
+                image_context=request.image_context,
+                project_context=request.project_context,
+                thread_id=request.thread_id,
+                for_reasoning=True  # This will use the reasoning-specific prompt
+            )
+            
+            # Use the reasoning-specific system prompt
+            think_messages = [{"role": "system", "content": reasoning_system_prompt}]
+            
+            # Add conversation history
+            if formatted_history:
+                think_messages.extend(formatted_history)
+            
+            # Add current user query
+            user_content = []
+            user_content.append({"type": "text", "text": request.query})
+            if request.attached_images:
+                for img in request.attached_images:
+                    user_content.append({
+                        "type": "image_url", 
+                        "image_url": {"url": img}
+                    })
+            
+            think_messages.append({"role": "user", "content": user_content})
+            
+            # Call OpenAI API for reasoning
+            headers = {
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            think_data = {
+                "model": DEFAULT_MODEL,
+                "messages": think_messages,
+                "temperature": 0.7,
+                "max_tokens": 1000,
+                "response_format": { "type": "text" }
+            }
+            
+            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)) as client:
+                reasoning_response = await client.post(
+                    f"{OPENAI_API_BASE}/chat/completions",
+                    headers=headers,
+                    json=think_data
+                )
+                
+                if reasoning_response.status_code != 200:
+                    logger.warning(f"Reasoning step failed: {reasoning_response.text}")
+                else:
+                    reasoning_result = reasoning_response.json()
+                    reasoning_output = reasoning_result["choices"][0]["message"]["content"]
+                    reasoning_title = "Reasoning Completed"
+                    
+                    # Log the reasoning output
+                    logger.info(f"Reasoning generated: {reasoning_output[:100]}...")
+        
+        # Now make the final API call for the actual response
+        # Use the regular system prompt (not for reasoning)
         system_prompt = create_system_prompt(
             query=request.query,
             mode=request.mode,
             conversation_history=request.conversation_history,
             image_context=request.image_context,
-            project_context=request.project_context
+            project_context=request.project_context,
+            thread_id=request.thread_id,
+            for_reasoning=False  # This will use the standard response prompt
         )
-        
-        # Format full conversation history - don't truncate it
-        formatted_history = format_conversation_history(request.conversation_history)
         
         # Prepare messages for OpenAI API
         messages = [
@@ -1126,6 +1195,11 @@ async def process_query(request: ProcessRequest):
             "timestamp": datetime.now().isoformat(),
             "thread_id": request.thread_id
         }
+        
+        # Add reasoning if it was generated
+        if reasoning_output:
+            api_response["reasoning"] = reasoning_output
+            api_response["reasoning_title"] = reasoning_title
         
         # Cache response
         if redis_client and content:
