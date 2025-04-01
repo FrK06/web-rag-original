@@ -9,7 +9,7 @@ import os
 import json
 import logging
 from urllib.parse import urlparse
-from datetime import datetime, timedelta
+from datetime import datetime
 import hashlib
 
 # Setup logging
@@ -21,7 +21,7 @@ app = FastAPI(title="Search Service")
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,6 +1,6 @@
 // src/components/chat/components/MessageItem.tsx
 import React from 'react';
-import { VolumeX, Volume2, Search } from 'lucide-react';
+import { VolumeX, Volume2, Search, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vs, vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
@@ -8,6 +8,7 @@ import { Message } from '../types';
 import { messageStyles } from '../utils/messageStyles';
 import { formatMarkdown } from '../utils/markdownFormatter';
 import { useTheme } from '@/components/ThemeProvider';
+import ReasoningDisplay from './ReasoningDisplay';
 
 // Import languages you want to use
 import jsx from 'react-syntax-highlighter/dist/cjs/languages/prism/jsx';
@@ -67,6 +68,50 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const isDark = theme === 'dark';
   const isAssistant = message.type === 'assistant';
   
+  // Helper function to format content to avoid duplication with reasoning
+  const formatContent = (content: string, reasoning?: string) => {
+    if (!reasoning || !content) return content;
+    
+    // Simple case: If content is completely contained in reasoning, and reasoning has more content
+    if (reasoning.includes(content) && reasoning.length > content.length * 1.5) {
+      // Don't need to show duplicated content
+      return content;
+    }
+    
+    // If the first 10 words of content and reasoning are identical, it might be duplication
+    const contentStart = content.split(' ').slice(0, 10).join(' ');
+    const reasoningStart = reasoning.split(' ').slice(0, 10).join(' ');
+    
+    if (contentStart === reasoningStart && contentStart.length > 20) {
+      // Try to find where reasoning ends and unique content begins
+      const words = content.split(' ');
+      let uniqueStartIndex = 0;
+      
+      for (let i = 10; i < words.length; i++) {
+        const checkPhrase = words.slice(0, i).join(' ');
+        if (!reasoning.includes(checkPhrase)) {
+          uniqueStartIndex = i - 1;
+          break;
+        }
+      }
+      
+      if (uniqueStartIndex > 10) {
+        // Return only the unique part of the content
+        return words.slice(uniqueStartIndex).join(' ');
+      }
+    }
+    
+    return content;
+  };
+  
+  // Debug logs for reasoning data
+  if (isAssistant) {
+    console.log(`Message ${index} has reasoning:`, Boolean(message.reasoning));
+    if (message.reasoning) {
+      console.log(`Reasoning preview:`, message.reasoning.substring(0, 50) + "...");
+    }
+  }
+  
   // Use appropriate syntax highlighting theme based on the current theme
   const codeStyle = isDark ? vscDarkPlus : vs;
   
@@ -120,6 +165,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
               </div>
             )}
           </div>
+          
+          {/* Show reasoning if available and this is an assistant message */}
+          {isAssistant && message.reasoning && (
+            <ReasoningDisplay 
+              reasoning={message.reasoning} 
+              stepTitle={message.reasoningTitle || "Reasoning Completed"}
+            />
+          )}
           
           {/* Display image if present */}
           {message.imageUrl && (
@@ -225,7 +278,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
                   )
                 }}
               >
-                {formatMarkdown(message.content, messages)}
+                {formatMarkdown(formatContent(message.content, message.reasoning), messages)}
               </ReactMarkdown>
             ) : (
               <p className="break-words">{message.content}</p>

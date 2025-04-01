@@ -7,6 +7,9 @@ export interface Message {
   timestamp: string;
   audioUrl?: string;
   imageUrl?: string;
+  reasoning?: string;         // Added: LLM reasoning text
+  reasoningTitle?: string;    // Added: Title for reasoning step
+  isReasoningComplete?: boolean; // Added: Whether reasoning is complete
 }
 
 export interface ChatResponse {
@@ -16,6 +19,8 @@ export interface ChatResponse {
   thread_id: string;
   source_url?: string;
   image_urls?: string[];
+  reasoning?: string;         // Added: LLM reasoning text
+  reasoning_title?: string;   // Added: Title for reasoning step
 }
 
 export interface SpeechToTextResponse {

@@ -1,9 +1,8 @@
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any
 import aiohttp
-import asyncio
 import redis.asyncio as redis
 import os
 import json
@@ -12,7 +11,6 @@ import base64
 import io
 from datetime import datetime
 import uuid
-import httpx
 from PIL import Image, ImageOps
 
 # Setup logging
@@ -24,7 +22,7 @@ app = FastAPI(title="Multimedia Service")
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -251,9 +249,14 @@ async def speech_to_text(request: AudioRequest):
 async def text_to_speech(request: TTSRequest):
     """Convert text to speech using OpenAI's TTS API"""
     if not OPENAI_API_KEY:
+        logger.error("OpenAI API key not configured")
         raise HTTPException(status_code=500, detail="OpenAI API key not configured")
     
+    # Add detailed logging
+    logger.info(f"Processing TTS request for text: {request.text[:50]}...")
+    
     if not await check_rate_limit("tts"):
+        logger.error("TTS rate limit exceeded")
         raise HTTPException(status_code=429, detail="API quota exceeded for text-to-speech")
     
     # Create cache key
@@ -279,6 +282,8 @@ async def text_to_speech(request: TTSRequest):
             "input": request.text
         }
         
+        logger.info(f"Calling OpenAI TTS API with voice: {request.voice}")
+        
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{OPENAI_API_BASE}/audio/speech",
@@ -287,9 +292,11 @@ async def text_to_speech(request: TTSRequest):
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
+                    logger.error(f"OpenAI API error: {error_text}")
                     raise HTTPException(status_code=response.status, detail=f"API error: {error_text}")
                 
                 audio_bytes = await response.read()
+                logger.info(f"Received audio response, size: {len(audio_bytes)} bytes")
         
         # Encode to base64
         audio_base64 = f"data:audio/mp3;base64,{base64.b64encode(audio_bytes).decode('utf-8')}"
@@ -314,6 +321,7 @@ async def text_to_speech(request: TTSRequest):
         raise
     except Exception as e:
         logger.error(f"Error in text-to-speech: {str(e)}")
+        # Return more detailed error for debugging
         raise HTTPException(status_code=500, detail=f"Text-to-speech error: {str(e)}")
 
 @app.post("/generate-image")

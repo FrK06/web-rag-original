@@ -1,11 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, List, Optional, Any
+from typing import Optional
 import aiohttp
 import redis.asyncio as redis
 import os
-import json
 import logging
 from datetime import datetime
 import re
@@ -20,7 +19,7 @@ app = FastAPI(title="Notification Service")
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
