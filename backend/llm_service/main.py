@@ -189,24 +189,51 @@ def create_system_prompt(
     """
     # Base system prompt
     if for_reasoning:
-        # Reasoning-specific prompt
+        # Reasoning-specific prompt with framework
         base_prompt = """You are an AI assistant tasked with thinking step-by-step before responding.
 
-IMPORTANT REASONING INSTRUCTIONS:
-1. Analyze the user's query thoroughly to understand what they're asking.
-2. Break down your thought process in a structured way.
-3. Consider different approaches or perspectives to answer the question.
-4. Identify any assumptions you're making.
-5. Think about what information you need to provide a complete answer.
-6. DO NOT provide the final response yet - focus ONLY on your reasoning process.
-7. Structure your reasoning as a step-by-step analysis.
+    UNIVERSAL REASONING FRAMEWORK:
+    Follow this 5-phase framework for all reasoning tasks:
 
-When analyzing date or time queries:
-1. The current date is {current_date} and it's {current_day_of_week}
-2. Show your calculation process for any date-related reasoning
+    1. PROBLEM ANALYSIS
+    • Restate the question/task in precise terms
+    • Identify all relevant constraints and parameters
+    • Determine what constitutes a complete answer
+    • Assess what information or tools you need
 
-Your reasoning should be detailed enough that someone following along could understand your thinking process.
-"""
+    2. SOLUTION PLANNING
+    • Select the most appropriate method(s) to solve the problem
+    • Break the problem into simpler sub-problems if needed
+    • Identify potential edge cases or special considerations
+    • Outline your step-by-step solution approach
+
+    3. SOLUTION EXECUTION
+    • Implement each step with explicit calculations/operations
+    • Track the state of the solution after each operation
+    • Show all work clearly and transparently
+    • For counting or enumeration tasks, use explicit tracking
+
+    4. VERIFICATION
+    • Apply an alternative method to verify your result
+    • Compare results from different approaches
+    • Test against any relevant constraints or edge cases
+    • Ensure your solution is complete and consistent
+
+    5. CONCLUSION
+    • Synthesize findings into a clear answer
+    • Assess confidence in your solution
+    • Note any limitations or assumptions made
+    • Present the final result
+
+    IMPORTANT: 
+    - Use this framework for ALL types of questions
+    - Show your full reasoning process in a structured way
+    - For mathematical or counting problems, include explicit tracking of values
+    - When appropriate, use visual representations (tables, diagrams described in text)
+    - Always verify your answer with at least one alternative approach
+
+    Current date: {current_date} and it's {current_day_of_week}
+    """
     else:
         # Response-specific prompt
         base_prompt = """You are a helpful assistant that can search the web, extract information from websites, communicate via SMS/phone calls, and work with images.
@@ -747,8 +774,6 @@ async def process_query(request: ProcessRequest):
                 logger.error(f"Error handling SMS request: {str(e)}")
                 # Continue with regular processing if direct handling fails
     
-    # Check for call request - similar special cases
-    
     try:
         # Format full conversation history - don't truncate it
         formatted_history = format_conversation_history(request.conversation_history)
@@ -822,6 +847,53 @@ async def process_query(request: ProcessRequest):
                     
                     # Log the reasoning output
                     logger.info(f"Reasoning generated: {reasoning_output[:100]}...")
+                    
+                    # Analyze if the reasoning follows the framework
+                    phases = ["PROBLEM ANALYSIS", "SOLUTION PLANNING", "SOLUTION EXECUTION", 
+                              "VERIFICATION", "CONCLUSION"]
+                    
+                    contains_all_phases = all(phase in reasoning_output for phase in phases)
+                    
+                    if not contains_all_phases:
+                        # If reasoning doesn't follow framework, send a follow-up to restructure it
+                        restructure_messages = think_messages.copy()
+                        
+                        # Add the original reasoning as context
+                        restructure_messages.append({
+                            "role": "assistant", 
+                            "content": reasoning_output
+                        })
+                        
+                        # Request restructuring
+                        restructure_messages.append({
+                            "role": "user", 
+                            "content": "Please restructure your reasoning to explicitly follow the Universal Reasoning Framework with these phases: 1. PROBLEM ANALYSIS, 2. SOLUTION PLANNING, 3. SOLUTION EXECUTION, 4. VERIFICATION, 5. CONCLUSION. Don't change your conclusion, just reorganize."
+                        })
+                        
+                        # Call the API again to restructure
+                        try:
+                            restructure_response = await client.post(
+                                f"{OPENAI_API_BASE}/chat/completions",
+                                headers=headers,
+                                json={
+                                    "model": DEFAULT_MODEL,
+                                    "messages": restructure_messages,
+                                    "temperature": 0.3,  # Lower temperature for structured output
+                                    "max_tokens": 1000
+                                }
+                            )
+                            
+                            if restructure_response.status_code == 200:
+                                restructure_result = restructure_response.json()
+                                restructured_reasoning = restructure_result["choices"][0]["message"]["content"]
+                                
+                                # Use restructured reasoning if it contains all phases
+                                if all(phase in restructured_reasoning for phase in phases):
+                                    reasoning_output = restructured_reasoning
+                                    logger.info("Reasoning successfully restructured to follow framework")
+                        except Exception as e:
+                            logger.error(f"Error restructuring reasoning: {str(e)}")
+                            # Continue with original reasoning if restructuring fails
         
         # Now make the final API call for the actual response
         # Use the regular system prompt (not for reasoning)
@@ -1196,8 +1268,24 @@ async def process_query(request: ProcessRequest):
             "thread_id": request.thread_id
         }
         
-        # Add reasoning if it was generated
+        # Calculate reasoning quality metrics
         if reasoning_output:
+            quality_metrics = {
+                "framework_adherence": sum(1 for phase in ["PROBLEM ANALYSIS", "SOLUTION PLANNING", 
+                                        "SOLUTION EXECUTION", "VERIFICATION", "CONCLUSION"] 
+                                        if phase in reasoning_output) / 5.0,
+                "reasoning_length": len(reasoning_output),
+                "verification_present": "VERIFICATION" in reasoning_output,
+                "has_structured_steps": bool(re.search(r'\d+\.|\*|\-', reasoning_output))
+            }
+            
+            # Log metrics for monitoring
+            logger.info(f"Reasoning quality metrics: {quality_metrics}")
+            
+            # Add metrics to response for frontend use
+            api_response["reasoning_metrics"] = quality_metrics
+            
+            # Add reasoning if it was generated
             api_response["reasoning"] = reasoning_output
             api_response["reasoning_title"] = reasoning_title
         
