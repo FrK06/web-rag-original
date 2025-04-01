@@ -11,6 +11,7 @@ import {
   getConversationHistory
 } from './services/apiService';
 import { useTheme } from '@/components/ThemeProvider';
+import { hasFormattedContent, detectAndFormatCode } from './utils/formatDetection';
 
 // Components
 import ChatHeader from './components/ChatHeader';
@@ -279,146 +280,144 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ userName }) => {
   };
 
   // Play text-to-speech audio
-  // In ChatInterface.tsx
-// In ChatInterface.tsx - Update the playAudio function
-const cleanupAudio = (audio: HTMLAudioElement | null) => {
-  if (!audio) return;
-  
-  try {
-    // Remove all event listeners first
-    audio.onended = null;
-    audio.onerror = null;
-    audio.oncanplay = null;
-    audio.oncanplaythrough = null;
+  const cleanupAudio = (audio: HTMLAudioElement | null) => {
+    if (!audio) return;
     
-    // Pause and reset
-    audio.pause();
-    audio.currentTime = 0;
-    audio.src = '';
-    
-    // Force browser to forget about this element
-    audio.load();
-  } catch (e) {
-    console.log("Cleanup error:", e);
-  }
-};
-
-// Add this function to ChatInterface.tsx
-const playAudioFallback = (text: string): boolean => {
-  try {
-    // Check if browser supports speech synthesis
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Cancel any current speech
-      
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-US';
-      
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      
-      window.speechSynthesis.speak(utterance);
-      return true;
-    }
-    return false;
-  } catch (error) {
-    console.error("Browser TTS fallback error:", error);
-    return false;
-  }
-};
-
-const playAudio = async (text: string, messageIndex?: number) => {
-  try {
-    // Stop any currently playing audio
-    if (currentAudio) {
-      currentAudio.pause();
-      currentAudio.src = '';
-      setCurrentAudio(null);
-    }
-    
-    setIsSpeaking(true);
-    setError(null); // Clear any previous errors
-    
-    // Get audio data from API
-    let audioUrl: string | undefined;
     try {
-      audioUrl = await getTextToSpeech(text);
-      console.log("Raw audio response:", audioUrl ? audioUrl.substring(0, 30) + "..." : "none");
+      // Remove all event listeners first
+      audio.onended = null;
+      audio.onerror = null;
+      audio.oncanplay = null;
+      audio.oncanplaythrough = null;
       
-      if (!audioUrl) {
-        throw new Error("No audio data received");
+      // Pause and reset
+      audio.pause();
+      audio.currentTime = 0;
+      audio.src = '';
+      
+      // Force browser to forget about this element
+      audio.load();
+    } catch (e) {
+      console.log("Cleanup error:", e);
+    }
+  };
+
+  // Add this function to ChatInterface.tsx
+  const playAudioFallback = (text: string): boolean => {
+    try {
+      // Check if browser supports speech synthesis
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // Cancel any current speech
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'en-US';
+        
+        utterance.onstart = () => setIsSpeaking(true);
+        utterance.onend = () => setIsSpeaking(false);
+        
+        window.speechSynthesis.speak(utterance);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Browser TTS fallback error:", error);
+      return false;
+    }
+  };
+
+  const playAudio = async (text: string, messageIndex?: number) => {
+    try {
+      // Stop any currently playing audio
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.src = '';
+        setCurrentAudio(null);
       }
       
-      // Create audio element with more robust error handling
-      const audio = new Audio();
+      setIsSpeaking(true);
+      setError(null); // Clear any previous errors
       
-      // Create a promise to handle the audio loading
-      const audioLoadPromise = new Promise<boolean>((resolve) => {
-        // Add success handler
-        audio.oncanplaythrough = () => {
-          resolve(true);
+      // Get audio data from API
+      let audioUrl: string | undefined;
+      try {
+        audioUrl = await getTextToSpeech(text);
+        console.log("Raw audio response:", audioUrl ? audioUrl.substring(0, 30) + "..." : "none");
+        
+        if (!audioUrl) {
+          throw new Error("No audio data received");
+        }
+        
+        // Create audio element with more robust error handling
+        const audio = new Audio();
+        
+        // Create a promise to handle the audio loading
+        const audioLoadPromise = new Promise<boolean>((resolve) => {
+          // Add success handler
+          audio.oncanplaythrough = () => {
+            resolve(true);
+          };
+          
+          // Add error handler that doesn't throw
+          audio.onerror = (e) => {
+            console.error("Audio error:", e);
+            // Don't reject, just log - this prevents the error from bubbling up
+            resolve(false); // Resolve with false to indicate there was an error
+          };
+        });
+        
+        // Set the source
+        audio.src = audioUrl;
+        audio.load(); // Explicitly load
+        setCurrentAudio(audio);
+        
+        // Wait for audio to be ready
+        await audioLoadPromise;
+        
+        // Try to play (this might still work even if the above had an error)
+        try {
+          await audio.play();
+        } catch (playError) {
+          // Ignore play errors - the audio might still play
+          console.log("Audio play error (can be ignored if audio works):", playError);
+        }
+        
+        // If messageIndex is provided, update the message with audio URL
+        if (messageIndex !== undefined) {
+          setMessages(prev => 
+            prev.map((msg, idx) => 
+              idx === messageIndex ? { ...msg, audioUrl } : msg
+            )
+          );
+        }
+        
+        // Handle audio end
+        audio.onended = () => {
+          setIsSpeaking(false);
+          setCurrentAudio(null);
         };
         
-        // Add error handler that doesn't throw
-        audio.onerror = (e) => {
-          console.error("Audio error:", e);
-          // Don't reject, just log - this prevents the error from bubbling up
-          resolve(false); // Resolve with false to indicate there was an error
-        };
-      });
-      
-      // Set the source
-      audio.src = audioUrl;
-      audio.load(); // Explicitly load
-      setCurrentAudio(audio);
-      
-      // Wait for audio to be ready
-      await audioLoadPromise;
-      
-      // Try to play (this might still work even if the above had an error)
-      try {
-        await audio.play();
-      } catch (playError) {
-        // Ignore play errors - the audio might still play
-        console.log("Audio play error (can be ignored if audio works):", playError);
+      } catch (apiError) {
+        console.error('API TTS error:', apiError);
+        
+        // Try browser TTS fallback
+        if (!playAudioFallback(text)) {
+          throw new Error('Both API and browser TTS failed');
+        }
       }
       
-      // If messageIndex is provided, update the message with audio URL
-      if (messageIndex !== undefined) {
-        setMessages(prev => 
-          prev.map((msg, idx) => 
-            idx === messageIndex ? { ...msg, audioUrl } : msg
-          )
-        );
-      }
-      
-      // Handle audio end
-      audio.onended = () => {
-        setIsSpeaking(false);
-        setCurrentAudio(null);
-      };
-      
-    } catch (apiError) {
-      console.error('API TTS error:', apiError);
-      
-      // Try browser TTS fallback
-      if (!playAudioFallback(text)) {
-        throw new Error('Both API and browser TTS failed');
-      }
+    } catch (error) {
+      console.error('All audio playback methods failed:', error);
+      setError('Audio playback unavailable');
+      setIsSpeaking(false);
     }
-    
-  } catch (error) {
-    console.error('All audio playback methods failed:', error);
-    setError('Audio playback unavailable');
-    setIsSpeaking(false);
-  }
-};
+  };
 
-// Also update the stopAudio function
-const stopAudio = () => {
-  cleanupAudio(currentAudio);
-  setCurrentAudio(null);
-  setIsSpeaking(false);
-};
+  // Also update the stopAudio function
+  const stopAudio = () => {
+    cleanupAudio(currentAudio);
+    setCurrentAudio(null);
+    setIsSpeaking(false);
+  };
 
   // Open image modal
   const openImageModal = (imageUrl: string) => {

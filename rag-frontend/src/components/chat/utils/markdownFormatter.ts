@@ -1,11 +1,27 @@
 // src/components/chat/utils/markdownFormatter.ts
 import { Message } from '../types';
 
+/**
+ * Formats markdown content from messages, handling special cases
+ * @param content The markdown content to format
+ * @param messages The array of all messages for context
+ * @returns Formatted markdown content
+ */
 export const formatMarkdown = (content: string, messages: Message[]) => {
-  // First, check for direct markdown image syntax - this is the new format
-  // No replacement needed as ReactMarkdown will render this correctly
+  // First handle image references
+  let formattedContent = handleImageReferences(content, messages);
   
-  // Then handle legacy format with IMAGE: tokens if needed
+  // Then fix any code formatting issues
+  formattedContent = fixCodeFormatting(formattedContent);
+  
+  return formattedContent;
+};
+
+/**
+ * Handles image references in markdown
+ */
+const handleImageReferences = (content: string, messages: Message[]) => {
+  // Handle old format with IMAGE: tokens
   const imageRegex = /\[IMAGE:(.*?)\.\.\.]/g;
   let formattedContent = content.replace(imageRegex, (match, prefix) => {
     // Try to find a matching image in the message history
@@ -24,6 +40,50 @@ export const formatMarkdown = (content: string, messages: Message[]) => {
     }
     return match;
   });
+  
+  return formattedContent;
+};
+
+/**
+ * Fixes code formatting issues in markdown
+ */
+const fixCodeFormatting = (content: string) => {
+  let formattedContent = content;
+  
+  // Fix single word/term code blocks that should be inline code
+  formattedContent = formattedContent.replace(
+    /```(javascript|typescript|jsx|js|ts)?\s*([a-zA-Z0-9_\-.$]+)\s*```/g, 
+    (match, lang, term) => {
+      // If it's a single word/identifier, make it inline code
+      if (term && term.length < 30 && !term.includes('\n')) {
+        return `\`${term}\``;
+      }
+      return match;
+    }
+  );
+  
+  // Fix code blocks with just single import statements or short expressions
+  formattedContent = formattedContent.replace(
+    /```(javascript|typescript|jsx|js|ts)?\s*(import .+ from ['"].+['"];?)\s*```/g,
+    (match, lang, importStatement) => {
+      if (importStatement && importStatement.length < 60) {
+        return `\`${importStatement}\``;
+      }
+      return match;
+    }
+  );
+  
+  // Fix library/package name code blocks
+  formattedContent = formattedContent.replace(
+    /```(javascript|typescript|jsx|js|ts)?\s*([@a-zA-Z0-9_\-./]+)\s*```/g,
+    (match, lang, packageName) => {
+      // If it's a package name pattern, make it inline code
+      if (packageName && packageName.length < 40 && !packageName.includes('\n')) {
+        return `\`${packageName}\``;
+      }
+      return match;
+    }
+  );
   
   return formattedContent;
 };
