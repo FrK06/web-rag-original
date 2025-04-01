@@ -95,7 +95,8 @@ export const sendMessage = async (
         thread_id: threadId,
         mode,
         attached_images: attachedImages,
-        conversation_history: formattedMessages
+        conversation_history: formattedMessages,
+        include_reasoning: true  // Add this flag to request reasoning from backend
       }, {
         timeout: DEFAULT_TIMEOUT,
         headers: getAuthHeaders(),

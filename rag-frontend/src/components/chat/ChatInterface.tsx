@@ -19,6 +19,7 @@ import ToolBar from './components/ToolBar';
 import ChatInput from './components/ChatInput';
 import ImageModal from './components/ImageModal';
 import ConversationSidebar from './components/ConversationSidebar';
+import ReasoningTest from './components/ReasoningTest';
 
 interface ChatInterfaceProps {
   userName?: string;
@@ -497,6 +498,12 @@ const stopAudio = () => {
 
     try {
       const response = await sendMessage(messageContent, threadId, mode, attachedImages, messages);
+      console.log("API Response:", {
+        message: response.message?.substring(0, 50) + "...",
+        hasReasoning: Boolean(response.reasoning),
+        reasoningPreview: response.reasoning?.substring(0, 50) + "...",
+        isReasoningSameAsMessage: response.reasoning === response.message
+      });
       
       // Set thread ID if returned
       if (response.thread_id) {
@@ -525,13 +532,22 @@ const stopAudio = () => {
           ? response.image_urls[0] 
           : undefined;
         
-        // Add assistant response
-        const assistantResponse = {
+        // Add assistant response with reasoning if available
+        const assistantResponse: Message = {
           type: 'assistant',
           content: response.message,
           timestamp: response.timestamp || new Date().toLocaleTimeString(),
-          imageUrl: imageUrl // Include the image URL if available
+          imageUrl: imageUrl, // Include the image URL if available
+          reasoning: response.reasoning, // Include reasoning from backend
+          reasoningTitle: response.reasoning_title || "Reasoning Completed",
+          isReasoningComplete: true
         };
+        
+        console.log("Adding assistant response:", {
+          content: assistantResponse.content?.substring(0, 50) + "...",
+          hasReasoning: Boolean(assistantResponse.reasoning),
+          reasoningPreview: assistantResponse.reasoning?.substring(0, 50) + "..."
+        });
         
         setMessages(prev => [...prev, assistantResponse]);
 
@@ -615,6 +631,9 @@ const stopAudio = () => {
         onShowSidebar={() => setSidebarOpen(true)}
         userName={userName}
       />
+
+      {/* Add the test component right here */}
+      <ReasoningTest />
 
       {/* Messages Area */}
       <MessagesContainer 

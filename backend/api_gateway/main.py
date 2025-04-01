@@ -127,6 +127,9 @@ async def chat_endpoint(request: Request):
     try:
         data = await request.json()
         
+        # Debug log
+        logger.info(f"Chat request received with include_reasoning: {data.get('include_reasoning', False)}")
+        
         # First store the message in conversation
         conversation_data = {
             "thread_id": data.get("thread_id"),
@@ -157,7 +160,8 @@ async def chat_endpoint(request: Request):
                 "thread_id": thread_id,
                 "mode": data.get("mode", "explore"),
                 "conversation_history": conversation_result.get("history", []),
-                "attached_images": data.get("attached_images", [])
+                "attached_images": data.get("attached_images", []),
+                "include_reasoning": data.get("include_reasoning", True)  # Pass along reasoning flag
             }
             
             llm_response = await client.post(
@@ -175,19 +179,37 @@ async def chat_endpoint(request: Request):
             
             result = llm_response.json()
             
-            # Store assistant response
+            # Debug logging
+            logger.info(f"LLM response received with keys: {list(result.keys())}")
+            logger.info(f"Response has reasoning: {bool(result.get('reasoning'))}")
+            if result.get('reasoning'):
+                logger.info(f"Reasoning preview: {result.get('reasoning', '')[:100]}...")
+                logger.info(f"Is reasoning same as message: {result.get('reasoning') == result.get('message')}")
+            
+            # Store assistant response with metadata
+            metadata = {
+                "tools_used": result.get("tools_used", []),
+                "image_urls": result.get("image_urls", [])
+            }
+            
+            # Add reasoning to metadata if available
+            if result.get("reasoning"):
+                metadata["reasoning"] = result.get("reasoning")
+                metadata["reasoning_title"] = result.get("reasoning_title", "Reasoning Completed")
+            
+            # Log metadata
+            logger.info(f"Storing assistant message with metadata keys: {list(metadata.keys())}")
+            
             await client.post(
                 f"{SERVICE_MAP['conversation']}/update",
                 json={
                     "thread_id": thread_id,
                     "assistant_message": result.get("message", ""),
-                    "metadata": {
-                        "tools_used": result.get("tools_used", []),
-                        "image_urls": result.get("image_urls", [])
-                    }
+                    "metadata": metadata
                 }
             )
             
+            # Return the full result including reasoning
             return JSONResponse(content=result)
             
     except Exception as e:
