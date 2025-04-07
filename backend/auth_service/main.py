@@ -2,13 +2,14 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Response, APIRouter
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import logging
 import os
 from datetime import datetime, timedelta
 import uuid
 from pydantic import BaseModel, EmailStr, Field
 import secrets
+#from mail_service.email_service import email_service
 
 # Import security modules
 from security.middleware import (
@@ -21,6 +22,9 @@ from security.middleware import (
 # Import database modules
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
+
+# Import email service
+from email.email_service import email_service
 
 # Redis
 import redis.asyncio as redis
@@ -47,6 +51,10 @@ redis_client = None
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Constants for the verification functionality
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "true").lower() == "true"
+
 # CORS configuration - restrict in production
 app.add_middleware(
     CORSMiddleware,
@@ -57,6 +65,7 @@ app.add_middleware(
 )
 # Add after your middleware setup
 app.include_router(public_router)
+
 # Auth models
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
@@ -95,6 +104,14 @@ class CSRFResponse(BaseModel):
     token: str
 
 class StatusResponse(BaseModel):
+    status: str
+    message: str
+
+# Add these models for email verification
+class EmailVerifyRequest(BaseModel):
+    token: str
+    
+class EmailVerificationResponse(BaseModel):
     status: str
     message: str
 
@@ -203,7 +220,8 @@ def format_user_response(user: Dict[str, Any]) -> Dict[str, Any]:
         "name": user["name"],
         "email": user["email"],
         "created_at": user["created_at"],
-        "updated_at": user["updated_at"]
+        "updated_at": user["updated_at"],
+        "email_verified": user.get("email_verified", False)
     }
 
 # Routes
@@ -275,6 +293,14 @@ async def register(user_data: UserCreate):
     hashed_password = get_password_hash(user_data.password)
     now = datetime.utcnow()
     
+    # Generate email verification token if required
+    email_verification_token = None
+    email_verification_expiry = None
+    
+    if EMAIL_VERIFICATION_REQUIRED:
+        email_verification_token = str(uuid.uuid4())
+        email_verification_expiry = now + timedelta(hours=24)  # 24 hour expiry
+    
     new_user = {
         "_id": user_id,
         "name": user_data.name,
@@ -282,10 +308,24 @@ async def register(user_data: UserCreate):
         "password": hashed_password,
         "created_at": now,
         "updated_at": now,
-        "last_login": None
+        "last_login": None,
+        "email_verified": not EMAIL_VERIFICATION_REQUIRED,  # True if verification not required
+        "email_verification_token": email_verification_token,
+        "email_verification_expiry": email_verification_expiry
     }
     
     await users_collection.insert_one(new_user)
+    
+    # Send verification email if required
+    if EMAIL_VERIFICATION_REQUIRED and email_verification_token:
+        email_sent = await email_service.send_verification_email(
+            user_data.email,
+            email_verification_token,
+            FRONTEND_URL
+        )
+        
+        if not email_sent:
+            logger.warning(f"Failed to send verification email to {user_data.email}")
     
     # Create tokens
     access_token = create_access_token(
@@ -324,6 +364,40 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Check if email verification is required and email is not verified
+    if EMAIL_VERIFICATION_REQUIRED and not user.get("email_verified", False):
+        # Generate a new verification token
+        now = datetime.utcnow()
+        verification_token = str(uuid.uuid4())
+        verification_expiry = now + timedelta(hours=24)
+        
+        # Update user with new verification token
+        await users_collection.update_one(
+            {"_id": user["_id"]},
+            {
+                "$set": {
+                    "email_verification_token": verification_token,
+                    "email_verification_expiry": verification_expiry
+                }
+            }
+        )
+        
+        # Attempt to resend verification email
+        email_sent = await email_service.send_verification_email(
+            user["email"],
+            verification_token,
+            FRONTEND_URL
+        )
+        
+        if not email_sent:
+            logger.warning(f"Failed to resend verification email to {user['email']}")
+            
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email not verified. A new verification email has been sent.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -495,8 +569,16 @@ async def request_password_reset(request: PasswordResetRequest):
         }
     )
     
-    # In a real implementation, send email with reset link
-    # Example: reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+    # Send reset email with token
+    email_sent = await email_service.send_password_reset_email(
+        request.email, 
+        reset_token,
+        FRONTEND_URL
+    )
+    
+    if not email_sent:
+        logger.error(f"Failed to send password reset email to {request.email}")
+    
     logger.info(f"Password reset requested for {request.email}")
     
     return {
@@ -547,6 +629,42 @@ async def reset_password(request: PasswordReset):
     return {
         "status": "success",
         "message": "Password reset successfully"
+    }
+
+@app.post("/verify-email", response_model=EmailVerificationResponse)
+async def verify_email(request: EmailVerifyRequest):
+    """Verify email address with token"""
+    token = request.token
+    
+    # Find user with this verification token
+    users = db[USERS_COLLECTION]
+    user = await users.find_one({
+        "email_verification_token": token,
+        "email_verification_expiry": {"$gt": datetime.utcnow()}
+    })
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token"
+        )
+    
+    # Mark email as verified
+    await users.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {
+                "email_verified": True,
+                "email_verification_token": None,
+                "email_verification_expiry": None,
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    return {
+        "status": "success",
+        "message": "Email verified successfully"
     }
 
 @app.put("/update-password", response_model=StatusResponse)

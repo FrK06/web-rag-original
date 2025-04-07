@@ -167,12 +167,16 @@ services:
     environment:
       - MONGO_URI=mongodb://mongo-user:${MONGO_PASSWORD}@mongodb:27017/ragassistant?authSource=admin
       - MONGO_DB=ragassistant
-      - JWT_SECRET=<long-random-string>
-      - CSRF_SECRET=<different-long-random-string>
-      - ACCESS_TOKEN_EXPIRE_MINUTES=15
-      - REFRESH_TOKEN_EXPIRE_DAYS=7
-      - ENVIRONMENT=production
-      - REDIS_URI=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - JWT_SECRET=${JWT_SECRET}
+      - CSRF_SECRET=${CSRF_SECRET}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE}
+      - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE}
+      - ENVIRONMENT=${NODE_ENV:-production}
+      - REDIS_URI=${REDIS_URI}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - EMAIL_FROM=${EMAIL_FROM}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - EMAIL_VERIFICATION_REQUIRED=false
     restart: always
     depends_on:
       - mongodb

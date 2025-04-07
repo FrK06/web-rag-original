@@ -1,3 +1,4 @@
+# backend/api_gateway/main.py
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
@@ -373,7 +374,6 @@ async def get_conversations(limit: int = 20, skip: int = 0):
             content={"message": "Error fetching conversations", "error": str(e)}
         )
 
-
 # Endpoint to get conversation history
 @app.get("/api/conversations/{thread_id}")
 async def get_conversation(thread_id: str, limit: int = 100):
@@ -653,6 +653,83 @@ async def auth_me(request: Request):
             content=response.content,
             status_code=response.status_code,
             media_type=response.headers.get("content-type", "application/json")
+        )
+
+# New auth endpoints for email verification and password reset
+
+# Email verification endpoint
+@app.post("/api/auth/verify-email")
+async def verify_email_endpoint(request: Request):
+    """Forward email verification request to auth service"""
+    try:
+        data = await request.json()
+        
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.post(
+                f"{SERVICE_MAP['auth']}/verify-email",
+                json=data
+            )
+            
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                media_type=response.headers.get("content-type", "application/json")
+            )
+    except Exception as e:
+        logger.error(f"Error in email verification: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Error verifying email", "error": str(e)}
+        )
+
+# Password reset request
+@app.post("/api/auth/request-reset")
+async def request_reset_endpoint(request: Request):
+    """Forward password reset request to auth service"""
+    try:
+        data = await request.json()
+        
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.post(
+                f"{SERVICE_MAP['auth']}/request-reset",
+                json=data
+            )
+            
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                media_type=response.headers.get("content-type", "application/json")
+            )
+    except Exception as e:
+        logger.error(f"Error in password reset request: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Error requesting password reset", "error": str(e)}
+        )
+
+# Reset password with token
+@app.post("/api/auth/reset-password")
+async def reset_password_endpoint(request: Request):
+    """Forward password reset with token to auth service"""
+    try:
+        data = await request.json()
+        
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+            response = await client.post(
+                f"{SERVICE_MAP['auth']}/reset-password",
+                json=data
+            )
+            
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                media_type=response.headers.get("content-type", "application/json")
+            )
+    except Exception as e:
+        logger.error(f"Error in password reset: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Error resetting password", "error": str(e)}
         )
 
 # Add middleware to validate JWT for protected routes
