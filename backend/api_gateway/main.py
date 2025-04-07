@@ -6,10 +6,8 @@ import os
 from fastapi.responses import JSONResponse
 import logging
 import time
-import uuid
 from pydantic import BaseModel
 from typing import Dict, List, Optional
-from urllib.parse import parse_qsl
 import json
 
 # Setup logging

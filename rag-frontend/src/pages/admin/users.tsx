@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { 
-  User, Trash2, UserPlus, Shield, Key, Mail, Search, Filter, MoreVertical, X, Check 
+  User, Trash2, UserPlus, Shield, Key, Search, Filter, X, Check 
 } from 'lucide-react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { apiClient } from '@/components/auth/authService';

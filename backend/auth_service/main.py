@@ -2,13 +2,12 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Response, APIRouter
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 import logging
 import os
 from datetime import datetime, timedelta
 import uuid
 from pydantic import BaseModel, EmailStr, Field
-import secrets
 from mail_service.email_service import email_service
 
 # Import security modules

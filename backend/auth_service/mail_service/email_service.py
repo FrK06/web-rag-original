@@ -1,7 +1,6 @@
 # backend/auth_service/mail_service/email_service.py
 import os
 import logging
-from typing import Dict, Any, Optional
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Email, To, Content, TemplateId, Personalization
 

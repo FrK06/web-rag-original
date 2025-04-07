@@ -1,6 +1,6 @@
 // rag-frontend/src/components/chat/components/ChatHeader.tsx
 import React, { useState } from 'react';
-import { Zap, Trash2, Moon, Sun, Menu, User, LogOut, ChevronDown } from 'lucide-react';
+import { Zap, Moon, Sun, Menu, User, LogOut, ChevronDown } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 import { useAuth } from '@/components/auth/AuthContext';
 import ModeDropdown from './ModeDropdown';
