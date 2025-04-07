@@ -35,13 +35,13 @@ app = FastAPI(title="Authentication Service")
 public_router = APIRouter()
 
 # MongoDB connection settings
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
+MONGO_URI = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 DB_NAME = os.getenv("MONGO_DB", "ragassistant")
 USERS_COLLECTION = "users"
 TOKENS_COLLECTION = "refresh_tokens"
 
 # Redis connection
-REDIS_URI = os.getenv("REDIS_URI", "redis://redis:6379/0")
+REDIS_URI = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 redis_client = None
 
 # Password hashing
@@ -52,9 +52,14 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "true").lower() == "true"
 
 # CORS configuration - restrict in production
+# Update CORS settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Restrict to your domain in production
+    allow_origins=[
+        "http://localhost:3000",
+        "https://*.up.railway.app",
+        os.getenv("FRONTEND_URL", "")
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -760,4 +765,5 @@ async def update_profile(request: Request, data: UserUpdate):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8006)
+    port = int(os.getenv("PORT", 8006))
+    uvicorn.run(app, host="0.0.0.0", port=port)

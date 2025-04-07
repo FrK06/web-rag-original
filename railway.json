@@ -1,0 +1,67 @@
+{
+    "services": [
+      {
+        "name": "frontend",
+        "src": "./rag-frontend",
+        "buildCommand": "npm install && npm run build",
+        "startCommand": "npm start",
+        "variables": {
+          "NODE_ENV": "production",
+          "NEXT_PUBLIC_API_URL": "${API_GATEWAY_URL}"
+        }
+      },
+      {
+        "name": "api-gateway",
+        "src": "./backend/api_gateway",
+        "buildCommand": "pip install -r requirements.txt",
+        "startCommand": "uvicorn main:app --host 0.0.0.0 --port $PORT",
+        "variables": {
+          "CONVERSATION_SERVICE_URL": "${CONVERSATION_SERVICE_URL}",
+          "SEARCH_SERVICE_URL": "${SEARCH_SERVICE_URL}",
+          "MULTIMEDIA_SERVICE_URL": "${MULTIMEDIA_SERVICE_URL}",
+          "NOTIFICATION_SERVICE_URL": "${NOTIFICATION_SERVICE_URL}",
+          "LLM_SERVICE_URL": "${LLM_SERVICE_URL}",
+          "AUTH_SERVICE_URL": "${AUTH_SERVICE_URL}"
+        }
+      },
+      {
+        "name": "auth-service",
+        "src": "./backend/auth_service",
+        "buildCommand": "pip install -r requirements.txt",
+        "startCommand": "uvicorn main:app --host 0.0.0.0 --port $PORT",
+        "variables": {
+          "EMAIL_VERIFICATION_REQUIRED": "true"
+        }
+      },
+      {
+        "name": "conversation-service",
+        "src": "./backend/conversation_service",
+        "buildCommand": "pip install -r requirements.txt",
+        "startCommand": "uvicorn main:app --host 0.0.0.0 --port $PORT"
+      },
+      {
+        "name": "search-service",
+        "src": "./backend/search_service",
+        "buildCommand": "pip install -r requirements.txt",
+        "startCommand": "uvicorn main:app --host 0.0.0.0 --port $PORT"
+      },
+      {
+        "name": "multimedia-service",
+        "src": "./backend/multimedia_service",
+        "buildCommand": "pip install -r requirements.txt",
+        "startCommand": "uvicorn main:app --host 0.0.0.0 --port $PORT"
+      },
+      {
+        "name": "notification-service",
+        "src": "./backend/notification_service",
+        "buildCommand": "pip install -r requirements.txt",
+        "startCommand": "uvicorn main:app --host 0.0.0.0 --port $PORT"
+      },
+      {
+        "name": "llm-service",
+        "src": "./backend/llm_service",
+        "buildCommand": "pip install -r requirements.txt",
+        "startCommand": "uvicorn main:app --host 0.0.0.0 --port $PORT"
+      }
+    ]
+  }
