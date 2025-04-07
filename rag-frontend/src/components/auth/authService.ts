@@ -1,4 +1,4 @@
-// src/components/auth/authService.ts
+// src/components/auth/authService.ts - Updated with email verification
 import axios from 'axios';
 import { User } from './AuthContext';
 
@@ -89,6 +89,11 @@ export interface TokenResponse {
   token_type: string;
 }
 
+export interface VerificationResponse {
+  status: string;
+  message: string;
+}
+
 // Fetch a CSRF token
 export const getCsrfToken = async (): Promise<string> => {
   try {
@@ -144,6 +149,11 @@ export const loginUser = async (
     };
   } catch (error) {
     console.error('Login error details:', error);
+    
+    // Check for unverified email error
+    if (axios.isAxiosError(error) && error.response?.data?.detail?.includes('Email not verified')) {
+      throw new Error('Email not verified. Please check your inbox for verification email.');
+    }
     
     // Throw a more user-friendly error
     throw new Error(
@@ -299,6 +309,28 @@ export const resetPassword = async (
     }
     
     throw new Error('Failed to reset password');
+  }
+};
+
+// Email verification
+export const verifyEmail = async (token: string): Promise<void> => {
+  try {
+    // Get fresh CSRF token
+    await getCsrfToken();
+    
+    await apiClient.post('/api/auth/verify-email', { token });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    
+    if (axios.isAxiosError(error) && error.response) {
+      if (error.response.status === 400) {
+        throw new Error('Invalid or expired verification token');
+      } else if (error.response.data?.detail) {
+        throw new Error(error.response.data.detail);
+      }
+    }
+    
+    throw new Error('Failed to verify email');
   }
 };
 

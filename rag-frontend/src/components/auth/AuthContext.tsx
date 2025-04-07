@@ -1,4 +1,4 @@
-// src/components/auth/AuthContext.tsx
+// src/components/auth/AuthContext.tsx - Updated with email verification
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { 
@@ -9,7 +9,8 @@ import {
   refreshToken,
   requestPasswordReset,
   resetPassword,
-  getCsrfToken
+  getCsrfToken,
+  verifyEmail
 } from './authService';
 
 // Types
@@ -17,6 +18,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  email_verified?: boolean;
 }
 
 interface AuthContextType {
@@ -29,6 +31,8 @@ interface AuthContextType {
   resetPasswordRequest: (email: string) => Promise<void>;
   confirmPasswordReset: (token: string, newPassword: string) => Promise<void>;
   refreshCsrfToken: () => Promise<string>;
+  confirmEmailVerification: (token: string) => Promise<void>;
+  resendVerificationEmail: (email: string) => Promise<void>;
 }
 
 // Create a safer default context
@@ -42,6 +46,8 @@ const AuthContext = createContext<AuthContextType>({
   resetPasswordRequest: async () => { throw new Error('AuthContext not initialized'); },
   confirmPasswordReset: async () => { throw new Error('AuthContext not initialized'); },
   refreshCsrfToken: async () => { throw new Error('AuthContext not initialized'); },
+  confirmEmailVerification: async () => { throw new Error('AuthContext not initialized'); },
+  resendVerificationEmail: async () => { throw new Error('AuthContext not initialized'); },
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -196,6 +202,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('auth_token', token);
       localStorage.setItem('refresh_token', refresh);
       
+      // Check if email is verified
+      if (user.email_verified === false) {
+        // Don't set user as authenticated if email not verified
+        setUser(null);
+        setIsLoading(false);
+        
+        // Handle unverified email - redirect to verification page
+        router.push('/verify-email-notice');
+        
+        throw new Error('Email not verified. Please check your inbox for verification email.');
+      }
+      
       // Debug log to confirm token is stored
       console.log("Token stored:", token.substring(0, 20) + "...");
       
@@ -208,7 +226,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
-  }, [withTimeout, setupRefreshTimer]);
+  }, [withTimeout, setupRefreshTimer, router]);
 
   // Register function
   const register = useCallback(async (name: string, email: string, password: string): Promise<User> => {
@@ -224,6 +242,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('auth_token', token);
       localStorage.setItem('refresh_token', refresh);
       
+      // Check if email verification is required
+      if (user.email_verified === false) {
+        // Don't set user as authenticated if email not verified
+        setUser(null);
+        setIsLoading(false);
+        
+        // Redirect to verification notice page
+        router.push('/verify-email-notice');
+        
+        // Still return the user, but throw error for UI handling
+        return user;
+      }
+      
       setUser(user);
       setupRefreshTimer();
       return user;
@@ -233,7 +264,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
-  }, [withTimeout, setupRefreshTimer]);
+  }, [withTimeout, setupRefreshTimer, router]);
 
   // Logout function
   const logout = useCallback(async (): Promise<void> => {
@@ -281,6 +312,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw error;
     }
   }, [withTimeout]);
+  
+  // Email verification confirmation
+  const confirmEmailVerification = useCallback(async (token: string): Promise<void> => {
+    try {
+      await withTimeout(
+        verifyEmail(token),
+        AUTH_TIMEOUT,
+        "Email verification timed out"
+      );
+      
+      // After successful verification, redirect to login
+      router.push('/login?verified=true');
+    } catch (error) {
+      console.error("Email verification error:", error);
+      throw error;
+    }
+  }, [withTimeout, router]);
+  
+  // Resend verification email
+  const resendVerificationEmail = useCallback(async (email: string): Promise<void> => {
+    try {
+      // This will attempt to login which will trigger a new verification email
+      // if the email is not verified yet
+      await withTimeout(
+        loginUser(email, "dummy-password-that-will-fail"),
+        AUTH_TIMEOUT,
+        "Verification email request timed out"
+      );
+    } catch (error) {
+      // Login will fail, but if email exists and is unverified,
+      // a new verification email will be sent automatically
+      console.log("Verification email requested");
+    }
+  }, [withTimeout]);
 
   // Provide auth context
   const value = {
@@ -292,7 +357,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     logout,
     resetPasswordRequest,
     confirmPasswordReset,
-    refreshCsrfToken
+    refreshCsrfToken,
+    confirmEmailVerification,
+    resendVerificationEmail
   };
 
   return (

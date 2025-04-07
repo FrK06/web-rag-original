@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import uuid
 from pydantic import BaseModel, EmailStr, Field
 import secrets
-#from mail_service.email_service import email_service
+from mail_service.email_service import email_service
 
 # Import security modules
 from security.middleware import (
@@ -22,9 +22,6 @@ from security.middleware import (
 # Import database modules
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
-
-# Import email service
-from email.email_service import email_service
 
 # Redis
 import redis.asyncio as redis
