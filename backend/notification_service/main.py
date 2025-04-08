@@ -19,7 +19,11 @@ app = FastAPI(title="Notification Service")
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://*.up.railway.app",
+        os.getenv("FRONTEND_URL", "")
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -343,4 +347,5 @@ async def make_call(request: CallRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8004)
+    port = int(os.getenv("PORT", 8004))
+    uvicorn.run(app, host="0.0.0.0", port=port)

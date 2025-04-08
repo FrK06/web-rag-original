@@ -21,7 +21,11 @@ app = FastAPI(title="Search Service")
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://*.up.railway.app",
+        os.getenv("FRONTEND_URL", "")
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -353,4 +357,5 @@ async def scrape_webpage(request: ScrapeRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    port = int(os.getenv("PORT", 8002))
+    uvicorn.run(app, host="0.0.0.0", port=port)
