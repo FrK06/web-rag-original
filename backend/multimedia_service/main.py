@@ -25,7 +25,9 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://*.up.railway.app",
-        os.getenv("FRONTEND_URL", "")
+        "https://loadant.com",           # Add your domain with HTTPS
+        "http://loadant.com",            # Also allow HTTP version
+        os.getenv("FRONTEND_URL", "")    # Keep this for flexibility
     ],
     allow_credentials=True,
     allow_methods=["*"],

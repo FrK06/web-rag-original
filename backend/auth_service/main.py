@@ -52,13 +52,14 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "true").lower() == "true"
 
 # CORS configuration - restrict in production
-# Update CORS settings
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "https://*.up.railway.app",
-        os.getenv("FRONTEND_URL", "")
+        "https://loadant.com",           # Add your domain with HTTPS
+        "http://loadant.com",            # Also allow HTTP version
+        os.getenv("FRONTEND_URL", "")    # Keep this for flexibility
     ],
     allow_credentials=True,
     allow_methods=["*"],
