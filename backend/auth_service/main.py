@@ -51,12 +51,13 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 EMAIL_VERIFICATION_REQUIRED = os.getenv("EMAIL_VERIFICATION_REQUIRED", "true").lower() == "true"
 
-# CORS configuration - restrict in production
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "https://*.up.railway.app",
+        "https://www.loadant.com",       # Vercel frontend
         "https://loadant.com",           # Add your domain with HTTPS
         os.getenv("FRONTEND_URL", "")    # Keep this for flexibility
     ],
