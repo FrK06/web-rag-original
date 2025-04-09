@@ -25,6 +25,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://*.up.railway.app",
+        "https://www.loadant.com",       # Vercel frontend
         "https://loadant.com",           # Add your domain with HTTPS
         os.getenv("FRONTEND_URL", "")    # Keep this for flexibility
     ],
@@ -32,7 +33,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # OpenAI API settings
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
