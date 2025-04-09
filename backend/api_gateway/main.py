@@ -22,6 +22,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://*.up.railway.app",
+        "https://www.loadant.com",       # Vercel frontend
         "https://loadant.com",           # Add your domain with HTTPS
         os.getenv("FRONTEND_URL", "")    # Keep this for flexibility
     ],
