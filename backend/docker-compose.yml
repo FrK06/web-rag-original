@@ -207,6 +207,7 @@ services:
     ports:
       - "27017:27017"
     environment:
+      - MONGO_URI=mongodb://mongo-user:mongomongo@mongodb:27017/ragassistant?authSource=admin
       - MONGO_INITDB_ROOT_USERNAME=mongo-user
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
     volumes:
