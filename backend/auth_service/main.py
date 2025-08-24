@@ -8,7 +8,7 @@ import os
 from datetime import datetime, timedelta
 import uuid
 from pydantic import BaseModel, EmailStr, Field
-import secrets
+#import secrets
 
 # Import security modules
 from security.middleware import (
@@ -286,6 +286,14 @@ async def register(user_data: UserCreate):
     }
     
     await users_collection.insert_one(new_user)
+    
+    # Auto-verify the user in development environment
+    if os.getenv("ENVIRONMENT", "production") != "production":
+        logger.info(f"Auto-verifying user {user_data.email} in development mode")
+        await users_collection.update_one(
+            {"_id": user_id},
+            {"$set": {"email_verified": True, "email_verified_at": now}}
+        )
     
     # Create tokens
     access_token = create_access_token(

@@ -32,7 +32,7 @@ app.add_middleware(
 # OpenAI API settings
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4o")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4.1-2025-04-14")
 
 # Redis connection
 REDIS_URI = os.getenv("REDIS_URI", "redis://redis:6379/4")

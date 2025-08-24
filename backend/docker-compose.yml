@@ -165,13 +165,14 @@ services:
     ports:
       - "8006:8006"
     environment:
+      - SKIP_EMAIL_VERIFICATION=true
       - MONGO_URI=mongodb://mongo-user:${MONGO_PASSWORD}@mongodb:27017/ragassistant?authSource=admin
       - MONGO_DB=ragassistant
       - JWT_SECRET=<long-random-string>
       - CSRF_SECRET=<different-long-random-string>
       - ACCESS_TOKEN_EXPIRE_MINUTES=15
       - REFRESH_TOKEN_EXPIRE_DAYS=7
-      - ENVIRONMENT=production
+      - ENVIRONMENT=development
       - REDIS_URI=redis://:${REDIS_PASSWORD}@redis:6379/0
     restart: always
     depends_on:
