@@ -19,7 +19,7 @@ RUN apt-get update \
     curl \
     build-essential \
     # For handling images in multimedia service
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     # Clean up
     && apt-get clean \
